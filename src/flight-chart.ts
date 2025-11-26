@@ -142,9 +142,8 @@ function loadAndStyleSVG(container: HTMLElement) {
 
     const fill = colorForStatus(SEAT_DATA[seatKey].status);
 
-    const parts = dom.querySelectorAll(
-      "path, rect, circle, polygon, ellipse"
-    );
+    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
+
     parts.forEach((p) => p.setAttribute("fill", fill));
 
     (dom as HTMLElement).style.cursor = "pointer";
@@ -154,14 +153,7 @@ function loadAndStyleSVG(container: HTMLElement) {
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
-let interactivityAttached = false;
-
 function attachInteractivity(container: HTMLElement) {
-  if (interactivityAttached) {
-    return;
-  }
-  interactivityAttached = true;
-
   log("Attaching interactivity...");
 
   container.addEventListener("mouseover", (ev: MouseEvent) => {
@@ -181,11 +173,11 @@ function attachInteractivity(container: HTMLElement) {
     const info = SEAT_DATA[seatKey];
     showTooltip(
       `
-      <strong>Seat No: ${seatKey}</strong><br>
+      <strong>Seat No: ${seatKey}</strong>
 
-      Frequent Traveller ID: ${info.travellerId}<br>
+      Frequent Traveller ID: ${info.travellerId}
 
-      Passenger: ${info.name}<br>
+      Passenger: ${info.name}
 
       Most Purchased Items: ${info.item}
       `,
@@ -202,7 +194,7 @@ function attachInteractivity(container: HTMLElement) {
     }
   });
 
-  container.addEventListener("mouseleave", () => {
+  container.addEventListener("mouseout", () => {
     hideTooltip();
   });
 }
@@ -215,18 +207,20 @@ async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderStart);
 
   const root =
-    (document.getElementById("flight-chart") as HTMLElement | null) ??
+    document.getElementById("flight-chart") ||
     (() => {
       log("flight-chart div not found; creating one.");
       const div = document.createElement("div");
       div.id = "flight-chart";
+      div.style.width = "100%";
+      div.style.height = "100%";
+      div.style.overflow = "auto";
       document.body.appendChild(div);
       return div;
     })();
 
   log("Root container found:", root);
 
-  // Clear previous SVG contents
   root.innerHTML = "";
 
   loadAndStyleSVG(root);
@@ -249,28 +243,31 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("Attributes:", attributes);
   log("Measures:", measures);
 
-  const chartConfig: ChartConfig = {
-    key: "main",
-    dimensions: [
-      {
-        key: "seat",
-        columns: attributes[0] ? [attributes[0]] : [],
-      },
-      {
-        key: "value",
-        columns: measures[0] ? [measures[0]] : [],
-      },
-    ],
-  };
+  const seatCols = attributes.length ? [attributes[0]] : [];
+  const valueCols = measures.length ? [measures[0]] : [];
 
-  return [chartConfig];
+  return [
+    {
+      key: "main",
+      dimensions: [
+        {
+          key: "seat",
+          columns: seatCols,
+        },
+        {
+          key: "value",
+          columns: valueCols,
+        },
+      ],
+    },
+  ];
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("Extracting queries from config:", configs);
 
   return configs.map((cfg) => ({
-    queryColumns: cfg.dimensions.flatMap((d) => d.columns),
+    queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
   }));
 };
 
@@ -281,13 +278,18 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("Initializing ThoughtSpot Chart...");
 
   try {
-    await getChartContext({
+    const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
+      // IMPORTANT: avoid TS form-builder blowing up on undefined
+      visualPropEditorDefinition: {
+        elements: [], // no custom settings UI
+      },
     });
 
-    log("Chart context initialized.");
+    log("Context received:", ctx);
+    await renderChart(ctx);
   } catch (err) {
     log("FATAL ERROR during init:", err);
   }
