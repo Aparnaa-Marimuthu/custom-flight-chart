@@ -3,7 +3,7 @@ import {
   type ChartModel,
   ChartToTSEvent,
   ColumnType,
-  CustomChartContext,
+  type CustomChartContext,
   getChartContext,
   type Query,
 } from "@thoughtspot/ts-chart-sdk";
@@ -142,8 +142,9 @@ function loadAndStyleSVG(container: HTMLElement) {
 
     const fill = colorForStatus(SEAT_DATA[seatKey].status);
 
-    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-
+    const parts = dom.querySelectorAll(
+      "path, rect, circle, polygon, ellipse"
+    );
     parts.forEach((p) => p.setAttribute("fill", fill));
 
     (dom as HTMLElement).style.cursor = "pointer";
@@ -153,7 +154,14 @@ function loadAndStyleSVG(container: HTMLElement) {
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
+let interactivityAttached = false;
+
 function attachInteractivity(container: HTMLElement) {
+  if (interactivityAttached) {
+    return;
+  }
+  interactivityAttached = true;
+
   log("Attaching interactivity...");
 
   container.addEventListener("mouseover", (ev: MouseEvent) => {
@@ -173,9 +181,12 @@ function attachInteractivity(container: HTMLElement) {
     const info = SEAT_DATA[seatKey];
     showTooltip(
       `
-      <strong>Seat No: ${seatKey}</strong><br/>
-      Frequent Traveller ID: ${info.travellerId}<br/>
-      Passenger: ${info.name}<br/>
+      <strong>Seat No: ${seatKey}</strong><br>
+
+      Frequent Traveller ID: ${info.travellerId}<br>
+
+      Passenger: ${info.name}<br>
+
       Most Purchased Items: ${info.item}
       `,
       ev.clientX,
@@ -191,7 +202,7 @@ function attachInteractivity(container: HTMLElement) {
     }
   });
 
-  container.addEventListener("mouseout", () => {
+  container.addEventListener("mouseleave", () => {
     hideTooltip();
   });
 }
@@ -204,7 +215,7 @@ async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderStart);
 
   const root =
-    document.getElementById("flight-chart") ||
+    (document.getElementById("flight-chart") as HTMLElement | null) ??
     (() => {
       log("flight-chart div not found; creating one.");
       const div = document.createElement("div");
@@ -215,6 +226,7 @@ async function renderChart(ctx: CustomChartContext) {
 
   log("Root container found:", root);
 
+  // Clear previous SVG contents
   root.innerHTML = "";
 
   loadAndStyleSVG(root);
@@ -225,7 +237,7 @@ async function renderChart(ctx: CustomChartContext) {
 }
 
 /* ---------------------------------------------
-   FIXED CONFIG (with logs)
+   FIXED CONFIG
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("Building chart config. Columns:", chartModel.columns);
@@ -237,23 +249,29 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("Attributes:", attributes);
   log("Measures:", measures);
 
-  return [
-    {
-      key: "main",
-      dimensions: [  
-        { key: "seat", columns: attributes.slice(0, 1) },  
-        { key: "value", columns: measures.slice(0, 1) },  
-     ],
-    },
-  ];
+  const chartConfig: ChartConfig = {
+    key: "main",
+    dimensions: [
+      {
+        key: "seat",
+        columns: attributes[0] ? [attributes[0]] : [],
+      },
+      {
+        key: "value",
+        columns: measures[0] ? [measures[0]] : [],
+      },
+    ],
+  };
+
+  return [chartConfig];
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("Extracting queries from config:", configs);
 
-    return configs.map((cfg) => ({  
-    queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),  
-    }));
+  return configs.map((cfg) => ({
+    queryColumns: cfg.dimensions.flatMap((d) => d.columns),
+  }));
 };
 
 /* ---------------------------------------------
@@ -263,16 +281,15 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("Initializing ThoughtSpot Chart...");
 
   try {
-    const ctx = await getChartContext({
+    await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
     });
 
-    log("Context received:", ctx);
-
-    await renderChart(ctx);
+    log("Chart context initialized.");
   } catch (err) {
     log("FATAL ERROR during init:", err);
   }
 })();
+ 
