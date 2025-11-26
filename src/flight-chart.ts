@@ -10,7 +10,96 @@ import {
 
 import flightSeatsSvg from "./assets/corrected_seats_hitbox.svg?raw";
 
-const log = (...msg: any[]) => console.log("[FLIGHT-CHART]", ...msg);
+// -------------------------------------------------------
+// INJECT YOUR CSS GLOBALLY (inside the TS iframe)
+// -------------------------------------------------------
+const STYLE = `
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+}
+
+/* --------------------------- */
+/* Your Provided CSS           */
+/* --------------------------- */
+
+.flight-seat-map-container {
+  font-family: sans-serif;
+  text-align: center;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.svg-container {
+  width: 80%;
+  max-width: 1000px;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.flight-svg {
+  width: 100%;
+  height: auto;
+}
+
+.seat-default {
+  fill: #f0f0f0;
+  stroke: #aaa;
+  stroke-width: 1px;
+}
+
+.seat-occupied {
+  fill: #4da6ff;
+  stroke: #336699;
+  stroke-width: 1px;
+  cursor: pointer;
+}
+
+.seat-frequent-traveller {
+  fill: #ff9933;
+  stroke: #cc6600;
+  stroke-width: 1px;
+  cursor: pointer;
+}
+
+.seat-occupied:hover,
+.seat-frequent-traveller:hover {
+  opacity: 0.7;
+}
+
+/* Tooltip */
+.tooltip {
+  position: absolute;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+`;
+
+(function injectCSS() {
+  const tag = document.createElement("style");
+  tag.innerHTML = STYLE;
+  document.head.appendChild(tag);
+})();
+
+// -------------------------------------------------------
+// Your existing code continues
+// -------------------------------------------------------
 
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
@@ -38,9 +127,6 @@ const SEAT_DATA: Record<
   },
 };
 
-/* ---------------------------------------------
-   UTILS
----------------------------------------------- */
 function colorForStatus(status?: SeatStatus): string {
   return status === "Frequent Traveller" || status === "Occupied"
     ? "#d15d99"
@@ -54,12 +140,10 @@ function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
     `g[id='seat_${seatKey}']`,
     `g[id='${seatKey}']`,
   ];
-
   for (const sel of selectors) {
     const el = container.querySelector(sel);
     if (el) return el;
   }
-
   return null;
 }
 
@@ -74,7 +158,6 @@ function resolveSeatKey(el: Element | null): string | null {
     }
     curr = curr.parentElement;
   }
-
   return null;
 }
 
@@ -85,17 +168,9 @@ function ensureTooltip(): HTMLDivElement {
   let tt = document.getElementById("seat-tooltip") as HTMLDivElement | null;
 
   if (!tt) {
-    log("Creating tooltip div...");
     tt = document.createElement("div");
     tt.id = "seat-tooltip";
-    tt.style.position = "fixed";
-    tt.style.pointerEvents = "none";
-    tt.style.zIndex = "99999";
-    tt.style.background = "rgba(0,0,0,0.75)";
-    tt.style.color = "#fff";
-    tt.style.padding = "6px 10px";
-    tt.style.borderRadius = "4px";
-    tt.style.fontSize = "12px";
+    tt.className = "tooltip";
     tt.style.display = "none";
     document.body.appendChild(tt);
   }
@@ -120,33 +195,26 @@ function hideTooltip() {
    LOAD + STYLE SVG
 ---------------------------------------------- */
 function loadAndStyleSVG(container: HTMLElement) {
-  log("Injecting SVG into container...", container);
+  const mapWrapper = document.createElement("div");
+  mapWrapper.className = "flight-seat-map-container";
 
-  try {
-    container.innerHTML = flightSeatsSvg;
-  } catch (err) {
-    log("FAILED to insert SVG:", err);
-  }
+  const svgBox = document.createElement("div");
+  svgBox.className = "svg-container";
 
-  log("SVG injected. Now coloring seats...");
+  svgBox.innerHTML = flightSeatsSvg;
+  mapWrapper.appendChild(svgBox);
+
+  container.appendChild(mapWrapper);
+
+  const svgRoot = svgBox;
 
   Object.keys(SEAT_DATA).forEach((seatKey) => {
-    const dom = findSeatDom(container, seatKey);
-
-    if (!dom) {
-      log(`Seat NOT found in SVG: ${seatKey}`);
-      return;
-    }
-
-    log(`Coloring seat`, seatKey);
+    const dom = findSeatDom(svgRoot, seatKey);
+    if (!dom) return;
 
     const fill = colorForStatus(SEAT_DATA[seatKey].status);
-
     const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-
     parts.forEach((p) => p.setAttribute("fill", fill));
-
-    (dom as HTMLElement).style.cursor = "pointer";
   });
 }
 
@@ -154,32 +222,17 @@ function loadAndStyleSVG(container: HTMLElement) {
    INTERACTIVITY
 ---------------------------------------------- */
 function attachInteractivity(container: HTMLElement) {
-  log("Attaching interactivity...");
-
   container.addEventListener("mouseover", (ev: MouseEvent) => {
     const seatKey = resolveSeatKey(ev.target as Element);
     if (!seatKey) return;
-
-    log("Hovering over seat:", seatKey);
-
-    const seatDom = findSeatDom(container, seatKey);
-    if (!seatDom) return;
-
-    seatDom.querySelectorAll("path, rect, circle").forEach((p) => {
-      p.setAttribute("stroke", "#222");
-      p.setAttribute("stroke-width", "0");
-    });
 
     const info = SEAT_DATA[seatKey];
     showTooltip(
       `
       <strong>Seat No: ${seatKey}</strong><br>
-
       Frequent Traveller ID: ${info.travellerId}<br>
-
       Passenger: ${info.name}<br>
-
-      Most Purchased Items: ${info.item}<br>
+      Most Purchased Items: ${info.item}
       `,
       ev.clientX,
       ev.clientY
@@ -203,30 +256,22 @@ function attachInteractivity(container: HTMLElement) {
    RENDER
 ---------------------------------------------- */
 async function renderChart(ctx: CustomChartContext) {
-  log("renderChart() called");
   ctx.emitEvent(ChartToTSEvent.RenderStart);
 
   const root =
     document.getElementById("flight-chart") ||
     (() => {
-      log("flight-chart div not found; creating one.");
       const div = document.createElement("div");
       div.id = "flight-chart";
-      div.style.width = "100%";
-      div.style.height = "100%";
-      div.style.overflow = "auto";
       document.body.appendChild(div);
       return div;
     })();
-
-  log("Root container found:", root);
 
   root.innerHTML = "";
 
   loadAndStyleSVG(root);
   attachInteractivity(root);
 
-  log("Rendering complete. Emitting RenderComplete...");
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
 
@@ -234,38 +279,22 @@ async function renderChart(ctx: CustomChartContext) {
    FIXED CONFIG
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("Building chart config. Columns:", chartModel.columns);
-
   const cols = chartModel.columns || [];
   const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
   const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
-
-  log("Attributes:", attributes);
-  log("Measures:", measures);
-
-  const seatCols = attributes.length ? [attributes[0]] : [];
-  const valueCols = measures.length ? [measures[0]] : [];
 
   return [
     {
       key: "main",
       dimensions: [
-        {
-          key: "seat",
-          columns: seatCols,
-        },
-        {
-          key: "value",
-          columns: valueCols,
-        },
+        { key: "seat", columns: attributes.length ? [attributes[0]] : [] },
+        { key: "value", columns: measures.length ? [measures[0]] : [] },
       ],
     },
   ];
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
-  log("Extracting queries from config:", configs);
-
   return configs.map((cfg) => ({
     queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
   }));
@@ -275,23 +304,16 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
    INIT
 ---------------------------------------------- */
 (async () => {
-  log("Initializing ThoughtSpot Chart...");
-
   try {
     const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
-      // IMPORTANT: avoid TS form-builder blowing up on undefined
-      visualPropEditorDefinition: {
-        elements: [], // no custom settings UI
-      },
+      visualPropEditorDefinition: { elements: [] },
     });
 
-    log("Context received:", ctx);
     await renderChart(ctx);
   } catch (err) {
-    log("FATAL ERROR during init:", err);
+    console.error(err);
   }
 })();
- 
