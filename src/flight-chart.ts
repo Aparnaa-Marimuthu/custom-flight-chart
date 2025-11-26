@@ -240,10 +240,10 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   return [
     {
       key: "main",
-      dimensions: [
-        { key: "seat", ...( { elements: attributes.slice(0, 1) } as any ) },
-        { key: "value", ...( { elements: measures.slice(0, 1) } as any ) },
-      ],
+      dimensions: [  
+        { key: "seat", columns: attributes.slice(0, 1) },  
+        { key: "value", columns: measures.slice(0, 1) },  
+     ],
     },
   ];
 };
@@ -251,9 +251,9 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("Extracting queries from config:", configs);
 
-  return configs.map((cfg) => ({
-    queryColumns: cfg.dimensions.flatMap((d) => (d as any).elements || []),
-  }));
+    return configs.map((cfg) => ({  
+    queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),  
+    }));
 };
 
 /* ---------------------------------------------
