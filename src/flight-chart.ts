@@ -6,346 +6,266 @@ import {
   CustomChartContext,
   getChartContext,
   type Query,
-} from '@thoughtspot/ts-chart-sdk';
-import _ from 'lodash';
-import flightSeatsSvg from './assets/corrected_seats_hitbox.svg?raw';
+} from "@thoughtspot/ts-chart-sdk";
 
-/**
- * Flight seat chart (plain TypeScript)
- *
- * - Incorporates the hover/tooltip and seat-color logic from your FlightSeatMap.tsx
- * - Works inside the ThoughtSpot custom chart lifecycle via getChartContext(...)
- *
- * Notes:
- * - The SVG is injected into the chart container via innerHTML.
- * - Seat element lookup supports both plain ids like "1A" and grouped ids like "seat_1A"
- * - Tooltips use the SDK events (ShowToolTip / HideToolTip)
- */
+import flightSeatsSvg from "./assets/corrected_seats_hitbox.svg?raw";
 
-/* -------------------------
-   Types & static seat data
-   ------------------------- */
-type SeatStatus = 'Frequent Traveller' | 'Occupied' | 'Empty';
+/* ---------------------------------------------
+   SEAT DATA
+---------------------------------------------- */
+type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
-const SEAT_DATA: Record<string, { name: string; travellerId: string; item: string; status: SeatStatus }> = {
-  // Example hard-coded mapping — replace / extend with real mapping as needed.
-  // Keys are seat labels (we will match either "1A" or "seat_1A" in the DOM).
-  '2A': { name: 'Oliver Bennett', travellerId: 'EZ9081123', item: 'sandwich and coffee', status: 'Frequent Traveller' },
-  '2B': { name: 'Charlotte Hayes', travellerId: 'EZ9081124', item: 'sandwich', status: 'Occupied' },
-  '4C': { name: 'James Whitmore', travellerId: 'EZ9081125', item: 'coffee', status: 'Occupied' },
+const SEAT_DATA: Record<
+  string,
+  { name: string; travellerId: string; item: string; status: SeatStatus }
+> = {
+  "2A": {
+    name: "Oliver Bennett",
+    travellerId: "EZ9081123",
+    item: "sandwich and coffee",
+    status: "Frequent Traveller",
+  },
+  "2B": {
+    name: "Charlotte Hayes",
+    travellerId: "EZ9081124",
+    item: "sandwich",
+    status: "Occupied",
+  },
+  "4C": {
+    name: "James Whitmore",
+    travellerId: "EZ9081125",
+    item: "coffee",
+    status: "Occupied",
+  },
 };
 
-/* -------------------------
-   Utilities
-   ------------------------- */
+/* ---------------------------------------------
+   UTILS
+---------------------------------------------- */
 function colorForStatus(status?: SeatStatus): string {
-  if (status === 'Frequent Traveller') return '#d15d99'; // pink-like (keep parity with your React CSS)
-  if (status === 'Occupied') return '#d15d99'; // same as above (you can customize)
-  return '#ffffff';
+  if (status === "Frequent Traveller") return "#d15d99";
+  if (status === "Occupied") return "#d15d99";
+  return "#ffffff";
 }
 
-/**
- * Attempt to find seat DOM element for a given seat key (e.g. '1A').
- * We support multiple id naming patterns:
- *   - exact id '1A'
- *   - prefixed group 'seat_1A'
- *   - group with g element: "g[id='seat_1A']" etc.
- */
-function findSeatDomForKey(container: HTMLElement, seatKey: string): Element | null {
-  // try common variants
-  const tries = [
+function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
+  const selectors = [
     `[id='seat_${seatKey}']`,
     `[id='${seatKey}']`,
     `g[id='seat_${seatKey}']`,
     `g[id='${seatKey}']`,
-    `#[seat_${seatKey}]`, // fallback (rare)
   ];
 
-  for (const sel of tries) {
-    try {
-      const el = container.querySelector(sel);
-      if (el) return el;
-    } catch {
-      // ignore bad selectors
-    }
+  for (const sel of selectors) {
+    const el = container.querySelector(sel);
+    if (el) return el;
   }
 
-  // last resort: query all nodes with an id and match by endsWith
-  const all = container.querySelectorAll<HTMLElement>('[id]');
+  const all = container.querySelectorAll("[id]");
   for (const n of Array.from(all)) {
-    if (n.id === `seat_${seatKey}` || n.id === seatKey) return n;
-    // also accept id that ends with the seat key (some svgs use prefixes)
+    if (n.id === seatKey || n.id === `seat_${seatKey}`) return n;
     if (n.id.endsWith(seatKey)) return n;
   }
 
   return null;
 }
 
-/**
- * Resolve an event target to the seat key in SEAT_DATA.
- * Walks up the DOM until an element with an id that maps to SEAT_DATA is found.
- * Supports ids with or without a "seat_" prefix.
- */
-function resolveSeatKeyFromElement(el: Element | null): string | null {
+function resolveSeatKey(el: Element | null): string | null {
   if (!el) return null;
 
-  let cur: Element | null = el;
-  while (cur) {
-    if (cur.id) {
-      // check direct id
-      if (SEAT_DATA[cur.id]) return cur.id;
-      // check trimmed / without prefix
-      const trimmed = cur.id.replace(/^seat_/, '');
-      if (SEAT_DATA[trimmed]) return trimmed;
+  let curr: Element | null = el;
+
+  while (curr) {
+    if (curr.id) {
+      const clean = curr.id.replace(/^seat_/, "");
+      if (SEAT_DATA[clean]) return clean;
     }
-    cur = cur.parentElement;
+    curr = curr.parentElement;
   }
+
   return null;
 }
 
-/* -------------------------
-   DOM / SVG manipulation
-   ------------------------- */
+/* ---------------------------------------------
+   CUSTOM TOOLTIP (HTML)
+---------------------------------------------- */
+function ensureTooltip(): HTMLDivElement {
+  let tt = document.getElementById("seat-tooltip") as HTMLDivElement | null;
 
-/** Inject the SVG into the provided container and style seat elements. */
-function loadAndStyleSVG(container: HTMLElement) {
-  // Inject SVG markup
-  container.innerHTML = flightSeatsSvg;
+  if (!tt) {
+    tt = document.createElement("div");
+    tt.id = "seat-tooltip";
+    tt.style.position = "fixed";
+    tt.style.pointerEvents = "none";
+    tt.style.zIndex = "99999";
+    tt.style.background = "rgba(0,0,0,0.75)";
+    tt.style.color = "#fff";
+    tt.style.padding = "6px 10px";
+    tt.style.borderRadius = "4px";
+    tt.style.fontSize = "12px";
+    tt.style.display = "none";
 
-  // Make sure svg is present
-  const svgEl = container.querySelector('svg');
-  if (!svgEl) return;
+    document.body.appendChild(tt);
+  }
 
-  // Apply seat colors for all entries in SEAT_DATA
-  Object.keys(SEAT_DATA).forEach((seatKey) => {
-    const dom = findSeatDomForKey(container, seatKey);
-    if (!dom) return;
-
-    // If the seat is a group <g>, color children paths/shapes; otherwise try to set fill on element
-    const data = SEAT_DATA[seatKey];
-    const fill = colorForStatus(data.status);
-
-    // apply fill to common primitives in the node
-    const pathChildren = dom.querySelectorAll<SVGElement>('path, rect, circle, polygon, ellipse');
-    if (pathChildren.length) {
-      pathChildren.forEach((c) => c.setAttribute('fill', fill));
-    } else if ((dom as SVGElement).setAttribute) {
-      try {
-        (dom as SVGElement).setAttribute('fill', fill);
-      } catch {}
-    }
-
-    // Add a class and pointer cursor for interactivity
-    try {
-      (dom as HTMLElement).classList?.add?.('interactive-seat');
-      (dom as HTMLElement).style.cursor = 'pointer';
-    } catch {}
-  });
-}
-
-/* -------------------------
-   Interactivity: hover + tooltip
-   ------------------------- */
-
-function createTooltipElement() {
-    let tooltip = document.getElementById("seat-tooltip") as HTMLDivElement | null;
-
-    if (!tooltip) {
-        tooltip = document.createElement("div");
-        tooltip.id = "seat-tooltip";
-        tooltip.style.position = "fixed";
-        tooltip.style.pointerEvents = "none";
-        tooltip.style.zIndex = "99999";
-        tooltip.style.background = "rgba(0,0,0,0.75)";
-        tooltip.style.color = "#fff";
-        tooltip.style.padding = "6px 10px";
-        tooltip.style.borderRadius = "4px";
-        tooltip.style.fontSize = "12px";
-        tooltip.style.display = "none";
-
-        document.body.appendChild(tooltip);
-    }
-
-    return tooltip;
+  return tt;
 }
 
 function showTooltip(html: string, x: number, y: number) {
-    const tooltip = createTooltipElement();
-    tooltip.innerHTML = html;
-    tooltip.style.left = x + 12 + "px";
-    tooltip.style.top = y + 12 + "px";
-    tooltip.style.display = "block";
+  const tt = ensureTooltip();
+  tt.innerHTML = html;
+  tt.style.left = x + 12 + "px";
+  tt.style.top = y + 12 + "px";
+  tt.style.display = "block";
 }
 
 function hideTooltip() {
-    const tooltip = createTooltipElement();
-    tooltip.style.display = "none";
+  const tt = ensureTooltip();
+  tt.style.display = "none";
 }
 
-/* ------------------------------------
-   UPDATED INTERACTIVITY FOR PLAYGROUND
-------------------------------------- */
+/* ---------------------------------------------
+   SVG LOADING + COLORING
+---------------------------------------------- */
+function loadAndStyleSVG(container: HTMLElement) {
+  container.innerHTML = flightSeatsSvg;
 
-function attachInteractivity(_ctx: CustomChartContext, container: HTMLElement) {
-    const onMouseOver = (ev: MouseEvent) => {
-        const target = ev.target as Element | null;
-        const seatKey = resolveSeatKeyFromElement(target);
+  Object.keys(SEAT_DATA).forEach((seatKey) => {
+    const dom = findSeatDom(container, seatKey);
+    if (!dom) return;
 
-        if (!seatKey) return;
+    const fill = colorForStatus(SEAT_DATA[seatKey].status);
 
-        const seatInfo = SEAT_DATA[seatKey];
-        if (!seatInfo) return;
+    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
+    if (parts.length > 0) {
+      parts.forEach((p) => p.setAttribute("fill", fill));
+    } else {
+      (dom as SVGElement).setAttribute("fill", fill);
+    }
 
-        const domSeat = findSeatDomForKey(container, seatKey);
-        if (!domSeat) return;
-
-        // highlight
-        domSeat.querySelectorAll<SVGElement>("path, rect, circle").forEach((p) => {
-            p.setAttribute("stroke", "#222");
-            p.setAttribute("stroke-width", "1.3");
-        });
-
-        // custom tooltip
-        showTooltip(
-            `
-            <strong> Seat Number:${seatKey}</strong><br/>
-            Frequent Traveller ID: ${seatInfo.travellerId}<br/>
-            Passenger: ${seatInfo.name}<br/>
-            Most Purchased Items: ${seatInfo.item}
-            `,
-            ev.clientX,
-            ev.clientY
-        );
-    };
-
-    const onMouseMove = (ev: MouseEvent) => {
-        const tooltip = document.getElementById("seat-tooltip");
-        if (!tooltip || tooltip.style.display === "none") return;
-        tooltip.style.left = ev.clientX + 12 + "px";
-        tooltip.style.top = ev.clientY + 12 + "px";
-    };
-
-    const onMouseOut = () => {
-        hideTooltip();
-
-        const all = container.querySelectorAll<SVGElement>("[stroke]");
-        all.forEach((p) => {
-            p.removeAttribute("stroke");
-            p.removeAttribute("stroke-width");
-        });
-    };
-
-    container.addEventListener("mouseover", onMouseOver);
-    container.addEventListener("mousemove", onMouseMove);
-    container.addEventListener("mouseout", onMouseOut);
+    (dom as HTMLElement).style.cursor = "pointer";
+  });
 }
 
-/* -------------------------
-   Render lifecycle
-   ------------------------- */
+/* ---------------------------------------------
+   INTERACTIVITY
+---------------------------------------------- */
+function attachInteractivity(container: HTMLElement) {
+  const onMouseOver = (ev: MouseEvent) => {
+    const target = ev.target as Element | null;
+    const seatKey = resolveSeatKey(target);
+    if (!seatKey) return;
 
-/**
- * Render into the ThoughtSpot-provided container.
- * We attempt to get a DOM node from ctx.getContainer() if available,
- * otherwise try a fallback element with id 'flight-chart'.
- */
-function getRenderContainer(ctx: CustomChartContext): HTMLElement | null {
-  // many SDK contexts provide a container accessor; check defensively
-  // @ts-ignore - permissive access in case ctx exposes helper
-  if (typeof (ctx as any).getContainer === 'function') {
-    try {
-      const c = (ctx as any).getContainer();
-      if (c && c instanceof HTMLElement) return c;
-    } catch {}
-  }
+    const seatInfo = SEAT_DATA[seatKey];
+    if (!seatInfo) return;
 
-  // fallback to an element with a known id inside the embed (create one if needed)
-  let container = document.getElementById('flight-chart');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'flight-chart';
-    // attempt to append into the root container if available
-    const root = document.body ?? document.documentElement;
-    root.appendChild(container);
-  }
+    const seatDom = findSeatDom(container, seatKey);
+    if (!seatDom) return;
 
-  return container;
+    seatDom
+      .querySelectorAll("path, rect, circle, polygon, ellipse")
+      .forEach((p) => {
+        p.setAttribute("stroke", "#222");
+        p.setAttribute("stroke-width", "0");
+      });
+
+    showTooltip(
+      `
+        <strong>Seat No: ${seatKey}</strong><br/>
+        Frequent Traveller ID: ${seatInfo.travellerId}<br/>
+        Passenger: ${seatInfo.name}<br/>
+        Most Purchased Items: ${seatInfo.item}
+      `,
+      ev.clientX,
+      ev.clientY
+    );
+  };
+
+  const onMouseMove = (ev: MouseEvent) => {
+    const tt = document.getElementById("seat-tooltip");
+    if (!tt || tt.style.display === "none") return;
+
+    tt.style.left = ev.clientX + 12 + "px";
+    tt.style.top = ev.clientY + 12 + "px";
+  };
+
+  const onMouseOut = () => {
+    hideTooltip();
+    container
+      .querySelectorAll("[stroke]")
+      .forEach((p) => p.removeAttribute("stroke"));
+  };
+
+  container.addEventListener("mouseover", onMouseOver);
+  container.addEventListener("mousemove", onMouseMove);
+  container.addEventListener("mouseout", onMouseOut);
 }
 
-/* -------------------------
-   Exported render callback(s)
-   ------------------------- */
+/* ---------------------------------------------
+   RENDER
+---------------------------------------------- */
+async function renderChart(ctx: CustomChartContext) {
+  ctx.emitEvent(ChartToTSEvent.RenderStart);
 
-const renderInner = (ctx: CustomChartContext) => {
-  const container = getRenderContainer(ctx);
-  if (!container) {
-    ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error: 'No container found' });
-    return;
-  }
+  const root =
+    document.getElementById("flight-chart") ||
+    (() => {
+      const div = document.createElement("div");
+      div.id = "flight-chart";
+      document.body.appendChild(div);
+      return div;
+    })();
 
-  // Clear previous contents
-  container.innerHTML = '';
+  root.innerHTML = "";
 
-  // load svg and apply styles
-  loadAndStyleSVG(container);
+  loadAndStyleSVG(root);
+  attachInteractivity(root);
 
-  // attach interactivity and keep cleanup handle (not used here, but could be returned)
-  attachInteractivity(ctx, container);
+  ctx.emitEvent(ChartToTSEvent.RenderComplete);
+}
+
+/* ---------------------------------------------
+   THOUGHTSPOT CONFIG FIX (THE IMPORTANT PART)
+---------------------------------------------- */
+const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
+  const cols = chartModel.columns || [];
+
+  const attributes = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
+  const measures = cols.filter(c => c.type === ColumnType.MEASURE);
+
+  return [
+    {
+      key: "main",
+      dimensions: [
+        {
+          key: "seat",
+          // Cast to ANY so TS accepts "elements"
+          ...( { elements: attributes.slice(0, 1) } as any )
+        },
+        {
+          key: "value",
+          ...( { elements: measures.slice(0, 1) } as any )
+        }
+      ]
+    }
+  ];
 };
 
-const renderChart = async (ctx: CustomChartContext): Promise<void> => {
-  try {
-    ctx.emitEvent(ChartToTSEvent.RenderStart);
-    renderInner(ctx);
-  } catch (err) {
-    ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error: err });
-  } finally {
-    ctx.emitEvent(ChartToTSEvent.RenderComplete);
-  }
+const getFixedQueries = (configs: ChartConfig[]): Query[] => {
+  return configs.map(cfg => ({
+    queryColumns: cfg.dimensions.flatMap(d => (d as any).elements || [])
+  }));
 };
 
-/* -------------------------
-   Initialize getChartContext
-   ------------------------- */
+/* ---------------------------------------------
+   INIT
+---------------------------------------------- */
 (async () => {
   const ctx = await getChartContext({
-    getDefaultChartConfig: (chartModel: ChartModel): ChartConfig[] => {
-      const cols = chartModel.columns ?? [];
-
-      const measureColumns = _.filter(cols, (col) => col.type === ColumnType.MEASURE);
-      const attributeColumns = _.filter(cols, (col) => col.type === ColumnType.ATTRIBUTE);
-
-      const axisConfig: ChartConfig = {
-        key: 'column',
-        dimensions: [
-          {
-            key: 'x',
-            columns: attributeColumns.slice(0, 1),
-          },
-          {
-            key: 'y',
-            columns: measureColumns.slice(0, 1),
-          },
-        ],
-      };
-      return [axisConfig];
-    },
-
-    getQueriesFromChartConfig: (chartConfig: ChartConfig[]): Array<Query> => {
-      return chartConfig.map((config: ChartConfig): Query =>
-        _.reduce(
-          config.dimensions,
-          (acc: Query, dimension) => ({
-            queryColumns: [...(acc.queryColumns || []), ...(dimension.columns || [])],
-          }),
-          { queryColumns: [] } as Query,
-        ),
-      );
-    },
-
-    renderChart: (ctx: CustomChartContext) => renderChart(ctx),
+    getDefaultChartConfig: getFixedChartConfig,
+    getQueriesFromChartConfig: getFixedQueries,
+    renderChart,
   });
 
-  // launch initial render
   renderChart(ctx);
 })();
