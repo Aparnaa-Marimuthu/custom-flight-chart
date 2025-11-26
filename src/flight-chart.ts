@@ -173,13 +173,13 @@ function attachInteractivity(container: HTMLElement) {
     const info = SEAT_DATA[seatKey];
     showTooltip(
       `
-      <strong>Seat No: ${seatKey}</strong>
+      <strong>Seat No: ${seatKey}</strong><br>
 
-      Frequent Traveller ID: ${info.travellerId}
+      Frequent Traveller ID: ${info.travellerId}<br>
 
-      Passenger: ${info.name}
+      Passenger: ${info.name}<br>
 
-      Most Purchased Items: ${info.item}
+      Most Purchased Items: ${info.item}<br>
       `,
       ev.clientX,
       ev.clientY
