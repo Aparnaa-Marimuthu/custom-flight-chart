@@ -10,9 +10,8 @@ import {
 
 import flightSeatsSvg from "./assets/corrected_seats_hitbox.svg?raw";
 
-/* ---------------------------------------------
-   SEAT DATA
----------------------------------------------- */
+const log = (...msg: any[]) => console.log("[FLIGHT-CHART]", ...msg);
+
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
 const SEAT_DATA: Record<
@@ -43,9 +42,9 @@ const SEAT_DATA: Record<
    UTILS
 ---------------------------------------------- */
 function colorForStatus(status?: SeatStatus): string {
-  if (status === "Frequent Traveller") return "#d15d99";
-  if (status === "Occupied") return "#d15d99";
-  return "#ffffff";
+  return status === "Frequent Traveller" || status === "Occupied"
+    ? "#d15d99"
+    : "#ffffff";
 }
 
 function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
@@ -61,12 +60,6 @@ function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
     if (el) return el;
   }
 
-  const all = container.querySelectorAll("[id]");
-  for (const n of Array.from(all)) {
-    if (n.id === seatKey || n.id === `seat_${seatKey}`) return n;
-    if (n.id.endsWith(seatKey)) return n;
-  }
-
   return null;
 }
 
@@ -74,7 +67,6 @@ function resolveSeatKey(el: Element | null): string | null {
   if (!el) return null;
 
   let curr: Element | null = el;
-
   while (curr) {
     if (curr.id) {
       const clean = curr.id.replace(/^seat_/, "");
@@ -87,12 +79,13 @@ function resolveSeatKey(el: Element | null): string | null {
 }
 
 /* ---------------------------------------------
-   CUSTOM TOOLTIP (HTML)
+   TOOLTIP
 ---------------------------------------------- */
 function ensureTooltip(): HTMLDivElement {
   let tt = document.getElementById("seat-tooltip") as HTMLDivElement | null;
 
   if (!tt) {
+    log("Creating tooltip div...");
     tt = document.createElement("div");
     tt.id = "seat-tooltip";
     tt.style.position = "fixed";
@@ -104,7 +97,6 @@ function ensureTooltip(): HTMLDivElement {
     tt.style.borderRadius = "4px";
     tt.style.fontSize = "12px";
     tt.style.display = "none";
-
     document.body.appendChild(tt);
   }
 
@@ -125,23 +117,34 @@ function hideTooltip() {
 }
 
 /* ---------------------------------------------
-   SVG LOADING + COLORING
+   LOAD + STYLE SVG
 ---------------------------------------------- */
 function loadAndStyleSVG(container: HTMLElement) {
-  container.innerHTML = flightSeatsSvg;
+  log("Injecting SVG into container...", container);
+
+  try {
+    container.innerHTML = flightSeatsSvg;
+  } catch (err) {
+    log("FAILED to insert SVG:", err);
+  }
+
+  log("SVG injected. Now coloring seats...");
 
   Object.keys(SEAT_DATA).forEach((seatKey) => {
     const dom = findSeatDom(container, seatKey);
-    if (!dom) return;
+
+    if (!dom) {
+      log(`Seat NOT found in SVG: ${seatKey}`);
+      return;
+    }
+
+    log(`Coloring seat`, seatKey);
 
     const fill = colorForStatus(SEAT_DATA[seatKey].status);
 
     const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-    if (parts.length > 0) {
-      parts.forEach((p) => p.setAttribute("fill", fill));
-    } else {
-      (dom as SVGElement).setAttribute("fill", fill);
-    }
+
+    parts.forEach((p) => p.setAttribute("fill", fill));
 
     (dom as HTMLElement).style.cursor = "pointer";
   });
@@ -151,109 +154,105 @@ function loadAndStyleSVG(container: HTMLElement) {
    INTERACTIVITY
 ---------------------------------------------- */
 function attachInteractivity(container: HTMLElement) {
-  const onMouseOver = (ev: MouseEvent) => {
-    const target = ev.target as Element | null;
-    const seatKey = resolveSeatKey(target);
+  log("Attaching interactivity...");
+
+  container.addEventListener("mouseover", (ev: MouseEvent) => {
+    const seatKey = resolveSeatKey(ev.target as Element);
     if (!seatKey) return;
 
-    const seatInfo = SEAT_DATA[seatKey];
-    if (!seatInfo) return;
+    log("Hovering over seat:", seatKey);
 
     const seatDom = findSeatDom(container, seatKey);
     if (!seatDom) return;
 
-    seatDom
-      .querySelectorAll("path, rect, circle, polygon, ellipse")
-      .forEach((p) => {
-        p.setAttribute("stroke", "#222");
-        p.setAttribute("stroke-width", "0");
-      });
+    seatDom.querySelectorAll("path, rect, circle").forEach((p) => {
+      p.setAttribute("stroke", "#222");
+      p.setAttribute("stroke-width", "0");
+    });
 
+    const info = SEAT_DATA[seatKey];
     showTooltip(
       `
-        <strong>Seat No: ${seatKey}</strong><br/>
-        Frequent Traveller ID: ${seatInfo.travellerId}<br/>
-        Passenger: ${seatInfo.name}<br/>
-        Most Purchased Items: ${seatInfo.item}
+      <strong>Seat No: ${seatKey}</strong><br/>
+      Frequent Traveller ID: ${info.travellerId}<br/>
+      Passenger: ${info.name}<br/>
+      Most Purchased Items: ${info.item}
       `,
       ev.clientX,
       ev.clientY
     );
-  };
+  });
 
-  const onMouseMove = (ev: MouseEvent) => {
+  container.addEventListener("mousemove", (ev) => {
     const tt = document.getElementById("seat-tooltip");
-    if (!tt || tt.style.display === "none") return;
+    if (tt?.style.display === "block") {
+      tt.style.left = ev.clientX + 12 + "px";
+      tt.style.top = ev.clientY + 12 + "px";
+    }
+  });
 
-    tt.style.left = ev.clientX + 12 + "px";
-    tt.style.top = ev.clientY + 12 + "px";
-  };
-
-  const onMouseOut = () => {
+  container.addEventListener("mouseout", () => {
     hideTooltip();
-    container
-      .querySelectorAll("[stroke]")
-      .forEach((p) => p.removeAttribute("stroke"));
-  };
-
-  container.addEventListener("mouseover", onMouseOver);
-  container.addEventListener("mousemove", onMouseMove);
-  container.addEventListener("mouseout", onMouseOut);
+  });
 }
 
 /* ---------------------------------------------
    RENDER
 ---------------------------------------------- */
 async function renderChart(ctx: CustomChartContext) {
+  log("renderChart() called");
   ctx.emitEvent(ChartToTSEvent.RenderStart);
 
   const root =
     document.getElementById("flight-chart") ||
     (() => {
+      log("flight-chart div not found; creating one.");
       const div = document.createElement("div");
       div.id = "flight-chart";
       document.body.appendChild(div);
       return div;
     })();
 
+  log("Root container found:", root);
+
   root.innerHTML = "";
 
   loadAndStyleSVG(root);
   attachInteractivity(root);
 
+  log("Rendering complete. Emitting RenderComplete...");
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
 
 /* ---------------------------------------------
-   THOUGHTSPOT CONFIG FIX (THE IMPORTANT PART)
+   FIXED CONFIG (with logs)
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  const cols = chartModel.columns || [];
+  log("Building chart config. Columns:", chartModel.columns);
 
-  const attributes = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
-  const measures = cols.filter(c => c.type === ColumnType.MEASURE);
+  const cols = chartModel.columns || [];
+  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
+  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
+
+  log("Attributes:", attributes);
+  log("Measures:", measures);
 
   return [
     {
       key: "main",
       dimensions: [
-        {
-          key: "seat",
-          // Cast to ANY so TS accepts "elements"
-          ...( { elements: attributes.slice(0, 1) } as any )
-        },
-        {
-          key: "value",
-          ...( { elements: measures.slice(0, 1) } as any )
-        }
-      ]
-    }
+        { key: "seat", ...( { elements: attributes.slice(0, 1) } as any ) },
+        { key: "value", ...( { elements: measures.slice(0, 1) } as any ) },
+      ],
+    },
   ];
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
-  return configs.map(cfg => ({
-    queryColumns: cfg.dimensions.flatMap(d => (d as any).elements || [])
+  log("Extracting queries from config:", configs);
+
+  return configs.map((cfg) => ({
+    queryColumns: cfg.dimensions.flatMap((d) => (d as any).elements || []),
   }));
 };
 
@@ -261,11 +260,19 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
    INIT
 ---------------------------------------------- */
 (async () => {
-  const ctx = await getChartContext({
-    getDefaultChartConfig: getFixedChartConfig,
-    getQueriesFromChartConfig: getFixedQueries,
-    renderChart,
-  });
+  log("Initializing ThoughtSpot Chart...");
 
-  renderChart(ctx);
+  try {
+    const ctx = await getChartContext({
+      getDefaultChartConfig: getFixedChartConfig,
+      getQueriesFromChartConfig: getFixedQueries,
+      renderChart,
+    });
+
+    log("Context received:", ctx);
+
+    await renderChart(ctx);
+  } catch (err) {
+    log("FATAL ERROR during init:", err);
+  }
 })();
