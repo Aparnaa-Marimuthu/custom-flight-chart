@@ -202,7 +202,7 @@ const SEAT_DATA: Record<
   },
 };
 
-let currentZoom = 1;  
+let currentZoom = 1.7;  
 const MIN_ZOOM = 0.5;  
 const MAX_ZOOM = 5;  
 const ZOOM_STEP = 0.25;  
@@ -336,9 +336,10 @@ function loadAndStyleSVG(container: HTMLElement) {
   svgBox.innerHTML = flightSeatsSvg;    
   svgWrapper.appendChild(svgBox);    
   mapWrapper.appendChild(svgWrapper);    
-    
   container.appendChild(mapWrapper);  
-    
+   updateZoom(container, 0);
+
+
   // Ensure SVG is properly sized  
   const svgElement = svgBox.querySelector('svg') as SVGElement;  
   if (svgElement) {  
