@@ -8,7 +8,7 @@ import {
   type Query,
 } from "@thoughtspot/ts-chart-sdk";
 
-import flightSeatsSvg from "./assets/corrected_seats_hitbox.svg?raw";
+import flightSeatsSvg from "./assets/EJ_airbus.svg?raw";
 
 // -------------------------------------------------------
 // INJECT YOUR CSS GLOBALLY (inside the TS iframe)
@@ -203,7 +203,7 @@ const SEAT_DATA: Record<
 };
 
 let currentZoom = 1.7;  
-const MIN_ZOOM = 0.5;  
+const MIN_ZOOM = 1;  
 const MAX_ZOOM = 5;  
 const ZOOM_STEP = 0.25;  
   
@@ -316,48 +316,189 @@ function hideTooltip() {
   tt.style.display = "none";
 }
 
-/* ---------------------------------------------
-   LOAD + STYLE SVG
----------------------------------------------- */
-function loadAndStyleSVG(container: HTMLElement) {    
-  const mapWrapper = document.createElement("div");    
-  mapWrapper.className = "flight-seat-map-container";    
-  mapWrapper.style.position = "relative";    
-    
-  // Add zoom controls    
-  mapWrapper.appendChild(createZoomControls(container));    
-    
-  const svgWrapper = document.createElement("div");    
-  svgWrapper.className = "svg-wrapper";    
-    
-  const svgBox = document.createElement("div");    
-  svgBox.className = "svg-container";    
-    
-  svgBox.innerHTML = flightSeatsSvg;    
-  svgWrapper.appendChild(svgBox);    
-  mapWrapper.appendChild(svgWrapper);    
-  container.appendChild(mapWrapper);  
-   updateZoom(container, 0);
+/* ---------- SVG PREP + HELPERS (CLEAN) ---------- */
+function safeGetAttr(el: Element | null, name: string) {
+  if (!el) return null;
+  return (
+    el.getAttribute(name) ??
+    el.getAttributeNS("http://www.w3.org/1999/xlink", name) ??
+    el.getAttributeNS("http://www.w3.org/2000/svg", name)
+  );
+}
 
+function safeSetXLink(el: Element, href: string) {
+  el.setAttribute("href", href);
+  el.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", href);
+}
 
-  // Ensure SVG is properly sized  
-  const svgElement = svgBox.querySelector('svg') as SVGElement;  
-  if (svgElement) {  
-    svgElement.style.width = '100%';  
-    svgElement.style.height = 'auto';  
-    svgElement.style.maxWidth = '150px';
-  }  
-    
-  const svgRoot = svgBox;    
-    
-  Object.keys(SEAT_DATA).forEach((seatKey) => {    
-    const dom = findSeatDom(svgRoot, seatKey);    
-    if (!dom) return;    
-    
-    const fill = colorForStatus(SEAT_DATA[seatKey].status);    
-    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");    
-    parts.forEach((p) => p.setAttribute("fill", fill));    
-  });    
+function prepareSvgMarkup(rawSvg: string) {
+  try {
+    const rootNormalized = rawSvg
+      .replace(/<\s*ns\d+:svg\b/gi, "<svg")
+      .replace(/<\/\s*ns\d+:svg\s*>/gi, "</svg>");
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rootNormalized, "image/svg+xml");
+    const svg = doc.documentElement;
+
+    if (!svg || svg.nodeName.toLowerCase() !== "svg") {
+      return rawSvg;
+    }
+
+    const defs = svg.querySelector("defs");
+    if (defs && svg.firstElementChild !== defs) {
+      svg.removeChild(defs);
+      svg.insertBefore(defs, svg.firstElementChild || null);
+    }
+
+    const images = svg.querySelectorAll("image");
+    images.forEach((img) => {
+      const href = safeGetAttr(img, "href") ?? "";
+      if (!href) return;
+      const cleaned = href.replace(/[\r\n]+/g, "");
+      safeSetXLink(img, cleaned);
+      if (!img.getAttribute("preserveAspectRatio")) {
+        img.setAttribute("preserveAspectRatio", "none");
+      }
+    });
+
+    const patterns = svg.querySelectorAll("pattern");
+    const svgEl = svg as unknown as SVGSVGElement;
+    const vb = svgEl.viewBox?.baseVal;
+
+    const svgWidth =
+      parseFloat(svgEl.getAttribute("width") || "") || (vb ? vb.width : 0);
+
+    const svgHeight =
+      parseFloat(svgEl.getAttribute("height") || "") || (vb ? vb.height : 0);
+
+    patterns.forEach((p) => {
+      p.setAttribute("patternUnits", "userSpaceOnUse");
+      p.removeAttribute("patternContentUnits");
+      if (svgWidth && svgHeight) {
+        p.setAttribute("width", String(svgWidth));
+        p.setAttribute("height", String(svgHeight));
+      }
+
+      const use = p.querySelector("use");
+      if (use) {
+        const useHref =
+          use.getAttribute("href") ??
+          use.getAttributeNS("http://www.w3.org/1999/xlink", "href") ??
+          use.getAttribute("ns1:href");
+
+        if (useHref) {
+          safeSetXLink(use, useHref);
+        }
+
+        const tr = use.getAttribute("transform");
+        if (tr && /scale\(\s*0\.00/.test(tr)) {
+          use.removeAttribute("transform");
+        }
+      }
+    });
+
+    const clipPaths = svg.querySelectorAll("clipPath");
+    let mainClipId: string | null = null;
+    if (clipPaths.length) {
+      mainClipId = clipPaths[0].id || clipPaths[0].getAttribute("id");
+    }
+
+    const bgRects = Array.from(svg.querySelectorAll("rect")).filter((r) => {
+      const f = r.getAttribute("fill") || "";
+      return /url\(#pattern/i.test(f);
+    });
+
+    bgRects.forEach((r) => {
+      if (r.closest("defs")) {
+        r.parentElement?.removeChild(r);
+      }
+    });
+
+    let targetGroup: Element | null = null;
+    if (mainClipId) {
+      targetGroup = svg.querySelector(
+        `g[clip-path="url(#${mainClipId})"], g[clip-path='url(#${mainClipId})']`
+      );
+    }
+    if (!targetGroup) {
+      targetGroup = svg.querySelector("g") ?? svg;
+    }
+
+    const hasBg = Array.from(targetGroup.children).some((c) => {
+      return (
+        c.nodeName === "rect" &&
+        /url\(#pattern/i.test((c as HTMLElement).getAttribute("fill") || "")
+      );
+    });
+
+    if (!hasBg) {
+      const firstPattern = svg.querySelector("pattern");
+      if (firstPattern) {
+        const patId = firstPattern.getAttribute("id");
+        const bg = doc.createElementNS("http://www.w3.org/2000/svg", "rect");
+
+        bg.setAttribute("width", svg.getAttribute("width") ?? String(svgWidth));
+        bg.setAttribute("height", svg.getAttribute("height") ?? String(svgHeight));
+        bg.setAttribute("fill", `url(#${patId})`);
+
+        if (mainClipId) {
+          targetGroup.setAttribute("clip-path", `url(#${mainClipId})`);
+        }
+
+        targetGroup.insertBefore(bg, targetGroup.firstChild);
+      }
+    }
+
+    const serializer = new XMLSerializer();
+    return serializer.serializeToString(doc);
+  } catch {
+    return rawSvg;
+  }
+}
+
+/* ---------- LOAD + STYLE SVG (CLEAN) ---------- */
+async function loadAndStyleSVG(container: HTMLElement) {
+  const mapWrapper = document.createElement("div");
+  mapWrapper.className = "flight-seat-map-container";
+  mapWrapper.style.position = "relative";
+
+  mapWrapper.appendChild(createZoomControls(container));
+
+  const svgWrapper = document.createElement("div");
+  svgWrapper.className = "svg-wrapper";
+
+  const svgBox = document.createElement("div");
+  svgBox.className = "svg-container";
+
+  const prepared = prepareSvgMarkup(flightSeatsSvg as string);
+
+  svgBox.innerHTML = prepared;
+  svgWrapper.appendChild(svgBox);
+  mapWrapper.appendChild(svgWrapper);
+  container.appendChild(mapWrapper);
+  updateZoom(container, 0);
+
+  const svgElement = svgBox.querySelector("svg") as SVGElement | null;
+  if (svgElement) {
+    svgElement.style.width = "100%";
+    svgElement.style.height = "auto";
+    svgElement.style.maxWidth = "150";
+  }
+
+  const svgRoot = svgBox;
+  Object.keys(SEAT_DATA).forEach((seatKey) => {
+    const dom = findSeatDom(svgRoot, seatKey);
+    if (!dom) return;
+
+    const fill = colorForStatus(SEAT_DATA[seatKey].status);
+    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
+    parts.forEach((p) => {
+      try {
+        p.setAttribute("fill", fill);
+      } catch {}
+    });
+  });
 }
 
 /* ---------------------------------------------
