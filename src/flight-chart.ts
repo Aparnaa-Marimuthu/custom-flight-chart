@@ -37,6 +37,7 @@ body, html {
   display: flex;
   flex-direction: column;
   align-items: center;
+  overflow: hidden;
 }
 
 .svg-container {
@@ -77,17 +78,91 @@ body, html {
 }
 
 /* Tooltip */
-.tooltip {
-  position: absolute;
-  background-color: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 10px 15px;
-  border-radius: 5px;
-  font-size: 14px;
-  pointer-events: none;
-  white-space: nowrap;
-  z-index: 1000;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+.tooltip {  
+  position: absolute;  
+  background: rgba(50, 50, 50, 0.85);  
+  color: white;  
+  padding: 12px 16px;  
+  border-radius: 8px;  
+  font-size: 13px;  
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;  
+  pointer-events: none;  
+  z-index: 1000;  
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);  
+  border: 1px solid rgb(17, 120, 238);  
+  backdrop-filter: blur(10px);  
+  max-width: 250px;  
+  white-space: normal;  
+  line-height: 1.4;  
+}
+
+.tooltip strong {  
+  display: block;  
+  font-size: 14px;  
+  margin-bottom: 8px;  
+  padding-bottom: 6px;  
+  border-bottom: 1px solid rgba(255,255,255,0.3);  
+}
+
+.tooltip-row {  
+  display: flex;  
+  justify-content: space-between;  
+  margin: 4px 0;  
+}
+
+.tooltip-label {  
+  font-weight: 600;  
+  opacity: 0.9;  
+}
+
+.tooltip-value {  
+  text-align: right;  
+}
+
+.zoom-controls {  
+  position: absolute;  
+  top: 20px;  
+  right: 20px;  
+  z-index: 100;  
+  display: flex;  
+  gap: 10px;  
+}  
+  
+.zoom-btn {  
+  background: rgba(175, 175, 175, 0.7);  
+  color: black;  
+  border: none;  
+  width: 36px;  
+  height: 36px;  
+  border-radius: 25%;  
+  cursor: pointer;  
+  font-size: 18px;  
+  display: flex;  
+  align-items: center;  
+  justify-content: center;  
+  transition: background 0.2s;  
+}  
+  
+.zoom-btn:hover {  
+  background: rgba(204, 204, 204, 0.9);  
+}  
+  
+.svg-wrapper {  
+  overflow: auto;  
+  width: 100%;  
+  height: calc(100vh - 60px);  
+  display: flex;  
+  justify-content: center;  
+  align-items: flex-start;  
+  padding-top: 60px;
+}  
+  
+.svg-container {  
+   transform-origin: center top; 
+  transition: transform 0.3s ease;  
+  min-height: 100%; 
+  width: auto;  
+  max-width: none; 
 }
 `;
 
@@ -126,6 +201,56 @@ const SEAT_DATA: Record<
     status: "Occupied",
   },
 };
+
+let currentZoom = 1;  
+const MIN_ZOOM = 0.5;  
+const MAX_ZOOM = 5;  
+const ZOOM_STEP = 0.25;  
+  
+function updateZoom(container: HTMLElement, delta: number) {  
+  currentZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + delta));  
+  const svgContainer = container.querySelector('.svg-container') as HTMLElement;  
+  if (svgContainer) {  
+    svgContainer.style.transform = `scale(${currentZoom})`;  
+  }  
+    
+  // Update button states  
+  const zoomInBtn = document.getElementById('zoom-in') as HTMLButtonElement;  
+  const zoomOutBtn = document.getElementById('zoom-out') as HTMLButtonElement;  
+  if (zoomInBtn) zoomInBtn.disabled = currentZoom >= MAX_ZOOM;  
+  if (zoomOutBtn) zoomOutBtn.disabled = currentZoom <= MIN_ZOOM;  
+}  
+  
+function createZoomControls(container: HTMLElement) {  
+  const controls = document.createElement('div');  
+  controls.className = 'zoom-controls';  
+    
+  const zoomInBtn = document.createElement('button');  
+  zoomInBtn.id = 'zoom-in';  
+  zoomInBtn.className = 'zoom-btn';  
+  zoomInBtn.innerHTML = '+';  
+  zoomInBtn.onclick = () => updateZoom(container, ZOOM_STEP);  
+    
+  const zoomOutBtn = document.createElement('button');  
+  zoomOutBtn.id = 'zoom-out';  
+  zoomOutBtn.className = 'zoom-btn';  
+  zoomOutBtn.innerHTML = '−';  
+  zoomOutBtn.onclick = () => updateZoom(container, -ZOOM_STEP);  
+    
+  const resetBtn = document.createElement('button');  
+  resetBtn.className = 'zoom-btn';  
+  resetBtn.innerHTML = '⟲';  
+  resetBtn.onclick = () => {  
+    currentZoom = 1;  
+    updateZoom(container, 0);  
+  };  
+    
+  controls.appendChild(zoomInBtn);  
+  controls.appendChild(zoomOutBtn);  
+  controls.appendChild(resetBtn);  
+    
+  return controls;  
+}
 
 function colorForStatus(status?: SeatStatus): string {
   return status === "Frequent Traveller" || status === "Occupied"
@@ -178,13 +303,13 @@ function ensureTooltip(): HTMLDivElement {
   return tt;
 }
 
-function showTooltip(html: string, x: number, y: number) {
-  const tt = ensureTooltip();
-  tt.innerHTML = html;
-  tt.style.left = x + 12 + "px";
-  tt.style.top = y + 12 + "px";
-  tt.style.display = "block";
-}
+function showTooltip(html: string, x: number, y: number) {  
+  const tt = ensureTooltip();  
+  tt.innerHTML = html;  
+  tt.style.left = x + 12 + "px";  
+  tt.style.top = y + 12 + "px";  
+  tt.style.display = "block";  
+}  
 
 function hideTooltip() {
   const tt = ensureTooltip();
@@ -194,50 +319,88 @@ function hideTooltip() {
 /* ---------------------------------------------
    LOAD + STYLE SVG
 ---------------------------------------------- */
-function loadAndStyleSVG(container: HTMLElement) {
-  const mapWrapper = document.createElement("div");
-  mapWrapper.className = "flight-seat-map-container";
-
-  const svgBox = document.createElement("div");
-  svgBox.className = "svg-container";
-
-  svgBox.innerHTML = flightSeatsSvg;
-  mapWrapper.appendChild(svgBox);
-
-  container.appendChild(mapWrapper);
-
-  const svgRoot = svgBox;
-
-  Object.keys(SEAT_DATA).forEach((seatKey) => {
-    const dom = findSeatDom(svgRoot, seatKey);
-    if (!dom) return;
-
-    const fill = colorForStatus(SEAT_DATA[seatKey].status);
-    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-    parts.forEach((p) => p.setAttribute("fill", fill));
-  });
+function loadAndStyleSVG(container: HTMLElement) {    
+  const mapWrapper = document.createElement("div");    
+  mapWrapper.className = "flight-seat-map-container";    
+  mapWrapper.style.position = "relative";    
+    
+  // Add zoom controls    
+  mapWrapper.appendChild(createZoomControls(container));    
+    
+  const svgWrapper = document.createElement("div");    
+  svgWrapper.className = "svg-wrapper";    
+    
+  const svgBox = document.createElement("div");    
+  svgBox.className = "svg-container";    
+    
+  svgBox.innerHTML = flightSeatsSvg;    
+  svgWrapper.appendChild(svgBox);    
+  mapWrapper.appendChild(svgWrapper);    
+    
+  container.appendChild(mapWrapper);  
+    
+  // Ensure SVG is properly sized  
+  const svgElement = svgBox.querySelector('svg') as SVGElement;  
+  if (svgElement) {  
+    svgElement.style.width = '100%';  
+    svgElement.style.height = 'auto';  
+    svgElement.style.maxWidth = '150px'; // Adjust based on your SVG dimensions  
+  }  
+    
+  const svgRoot = svgBox;    
+    
+  Object.keys(SEAT_DATA).forEach((seatKey) => {    
+    const dom = findSeatDom(svgRoot, seatKey);    
+    if (!dom) return;    
+    
+    const fill = colorForStatus(SEAT_DATA[seatKey].status);    
+    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");    
+    parts.forEach((p) => p.setAttribute("fill", fill));    
+  });    
 }
 
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
-function attachInteractivity(container: HTMLElement) {
-  container.addEventListener("mouseover", (ev: MouseEvent) => {
-    const seatKey = resolveSeatKey(ev.target as Element);
-    if (!seatKey) return;
+function attachInteractivity(container: HTMLElement) {  
+  container.addEventListener("mouseover", (ev: MouseEvent) => {  
+    const seatKey = resolveSeatKey(ev.target as Element);  
+    if (!seatKey) return;  
+  
+    const info = SEAT_DATA[seatKey];  
+      
+    // Status-based tooltip styling  
+    const statusColor = 
+      info.status === "Frequent Traveller" ? "#ff9933" :   
+      info.status === "Occupied" ? "#4da6ff" : 
+      "#ffffff";
 
-    const info = SEAT_DATA[seatKey];
     showTooltip(
       `
-      <strong>Seat No: ${seatKey}</strong><br>
-      Frequent Traveller ID: ${info.travellerId}<br>
-      Passenger: ${info.name}<br>
-      Most Purchased Items: ${info.item}
+      <strong>Seat No: ${seatKey}</strong>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Status:</span>
+        <span class="tooltip-value" style="color:${statusColor}; font-weight:600;">
+          ${info.status}
+        </span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Passenger Name:</span>
+        <span class="tooltip-value">${info.name}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Frequent Traveller ID:</span>
+        <span class="tooltip-value">${info.travellerId}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Most Purchased Item:</span>
+        <span class="tooltip-value">${info.item}</span>
+      </div>
       `,
       ev.clientX,
       ev.clientY
     );
-  });
+  });  
 
   container.addEventListener("mousemove", (ev) => {
     const tt = document.getElementById("seat-tooltip");
