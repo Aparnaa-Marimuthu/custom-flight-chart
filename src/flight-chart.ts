@@ -344,7 +344,7 @@ function loadAndStyleSVG(container: HTMLElement) {
   if (svgElement) {  
     svgElement.style.width = '100%';  
     svgElement.style.height = 'auto';  
-    svgElement.style.maxWidth = '200px';
+    svgElement.style.maxWidth = '150px';
   }  
     
   const svgRoot = svgBox;    
