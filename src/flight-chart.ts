@@ -121,8 +121,8 @@ body, html {
 
 .zoom-controls {  
   position: absolute;  
-  top: 20px;  
-  right: 20px;  
+  top: 5px;  
+  right: 5px;  
   z-index: 100;  
   display: flex;  
   gap: 10px;  
@@ -344,7 +344,7 @@ function loadAndStyleSVG(container: HTMLElement) {
   if (svgElement) {  
     svgElement.style.width = '100%';  
     svgElement.style.height = 'auto';  
-    svgElement.style.maxWidth = '150px'; // Adjust based on your SVG dimensions  
+    svgElement.style.maxWidth = '200px';
   }  
     
   const svgRoot = svgBox;    
