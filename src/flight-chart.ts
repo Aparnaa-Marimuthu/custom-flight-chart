@@ -1,10 +1,10 @@
 import {
   type ChartConfig,
-  type ChartModel,
   ChartToTSEvent,
   type CustomChartContext,
   getChartContext,
   type Query,
+  type QueryColumn,
 } from "@thoughtspot/ts-chart-sdk";
 
 import flightSeatsSvg from "./assets/A320N_repeated_multiline_tooltip.svg?raw";
@@ -712,17 +712,16 @@ async function renderChart(ctx: CustomChartContext) {
 /* ---------------------------------------------
    FIXED CONFIG (DIMENSIONS USED FOR DRAGGABLE FIELDS)
 ---------------------------------------------- */
-const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  console.log("[ChartModel received]", chartModel);
+const getFixedChartConfig = (): ChartConfig[] => {
 
-  return [
+ return [
     {
       key: "main",
       dimensions: [
-        { key: "seat",            columns: [] },
-        { key: "passenger_name",  columns: [] },
-        { key: "passenger_id",    columns: [] },
-        { key: "product_detail",  columns: [] },
+        { key: "seat", columns: [] },
+        { key: "passenger_name", columns: [] },
+        { key: "passenger_id", columns: [] },
+        { key: "product_detail", columns: [] },
       ],
     },
   ];
@@ -733,15 +732,30 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
 ---------------------------------------------- */
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map(cfg => {
-    const cols = cfg.dimensions.flatMap(d => d.columns);
+     const cols = cfg.dimensions.flatMap((d) => d.columns || []);
 
     console.log("[Query columns generated]", cols);
 
-    return {
-      queryColumns: cols,  // MUST be exactly what TS gives
-    };
+    if (cols.length === 0) {
+      const dummy: QueryColumn = {
+       id: "dummy",
+       name: "dummy",
+       type: 2,
+       dataType: 2,
+       aggregationType: 22,
+       timeBucket: 0,
+       chartSpecificColumnType: 0,
+       columnProperties: {},
+       customOrder: [],
+      };
+
+      return { queryColumns: [dummy] };
+    }
+
+    return { queryColumns: cols };
   });
 };
+
 
 
 
@@ -754,15 +768,9 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
-      visualPropEditorDefinition: { 
-        elements: [
-            {
-            type: "text",
-            key: "info",
-            label: "Seat Map",
-            defaultValue: "Custom Seat Map",
-            }
-      ] },
+      visualPropEditorDefinition: {
+        elements: [], 
+      },
     });
 
   } catch (err) {
