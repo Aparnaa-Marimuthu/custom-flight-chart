@@ -606,15 +606,20 @@ async function renderChart(ctx: CustomChartContext) {
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   const cols = chartModel.columns || [];
-  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
-  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
+  const seatCol = cols.find(c => c.name.toLowerCase() === "seat");
+  const nameCol = cols.find(c => c.name.toLowerCase() === "passenger name");
+  const idCol = cols.find(c => c.name.toLowerCase() === "passengerid");
+  const prodCol = cols.find(c => c.name.toLowerCase() === "product detail");
+
 
   return [
     {
       key: "main",
       dimensions: [
-        { key: "seat", columns: attributes.length ? [attributes[0]] : [] },
-        { key: "value", columns: measures.length ? [measures[0]] : [] },
+        { key: "seat", columns: seatCol ? [seatCol] : [] },
+        { key: "passengerName", columns: nameCol ? [nameCol] : [] },
+        { key: "passengerId", columns: idCol ? [idCol] : [] },
+        { key: "productDetail", columns: prodCol ? [prodCol] : [] }
       ],
     },
   ];
