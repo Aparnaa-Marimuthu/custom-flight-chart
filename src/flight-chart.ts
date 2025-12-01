@@ -581,6 +581,9 @@ function buildSeatData(queryResult: any) {
 async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderStart);
   const queryResult = (ctx as any).data;
+  console.log("QUERY RESULT:", queryResult);
+  console.log("COLUMNS:", queryResult.columns);
+  console.log("DATA:", queryResult.data);
   const dynamicSeatData = buildSeatData(queryResult);
 
   const root =
@@ -605,24 +608,38 @@ async function renderChart(ctx: CustomChartContext) {
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   const cols = chartModel.columns || [];
+
   const seatCol = cols.find(c => c.name.toLowerCase() === "seat");
   const nameCol = cols.find(c => c.name.toLowerCase() === "passenger name");
   const idCol = cols.find(c => c.name.toLowerCase() === "passengerid");
   const prodCol = cols.find(c => c.name.toLowerCase() === "product detail");
 
+   return [
+  {
+    key: "main",
+    dimensions: [
+      {
+        key: "Seat",
+        columns: seatCol ? [seatCol] : []
+      },
+      {
+        key: "Passenger Name",
+        columns: nameCol ? [nameCol] : []
+      },
+      {
+        key: "Passenger ID",
+        columns: idCol ? [idCol] : []
+      },
+      {
+        key: "Product Detail",
+        columns: prodCol ? [prodCol] : []
+      }
+    ]
+  }
+];
 
-  return [
-    {
-      key: "main",
-      dimensions: [
-        { key: "seat", columns: seatCol ? [seatCol] : [] },
-        { key: "passengerName", columns: nameCol ? [nameCol] : [] },
-        { key: "passengerId", columns: idCol ? [idCol] : [] },
-        { key: "productDetail", columns: prodCol ? [prodCol] : [] }
-      ],
-    },
-  ];
 };
+
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map((cfg) => ({
