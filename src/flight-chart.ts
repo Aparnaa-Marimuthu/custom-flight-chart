@@ -1,5 +1,6 @@
 import {
   type ChartConfig,
+  type ChartModel,
   ChartToTSEvent,
   type CustomChartContext,
   getChartContext,
@@ -700,39 +701,62 @@ async function renderChart(ctx: CustomChartContext) {
 /* ---------------------------------------------
    FIXED CONFIG
 ---------------------------------------------- */
-const getFixedChartConfig = (): ChartConfig[] => {
+/* ---------------------------------------------
+   FIXED CONFIG (AUTOMATIC COLUMN PICKER)
+---------------------------------------------- */
+const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[]  => {
+  console.log("[ChartModel received]", chartModel);
 
-  return [
-    {
-      key: "main",
-      dimensions: [
-        {
-          key: "seat",
-          columns: [],
-        },
-        {
-          key: "passenger_name",
-          columns: [],
-        },
-        {
-          key: "passenger_id",
-          columns: [],
-        },
-        {
-          key: "product_detail",
-          columns: [],
-        },
-      ],
-    },
-  ];
+  const cols = chartModel?.columns || [];
+
+  // Helper to match column by name safely
+  const find = (name: string) =>
+    cols.find(c => c.name?.toLowerCase().trim() === name.toLowerCase().trim());
+
+  // Try mapping
+  const seatCol = find("seat");
+  const nameCol = find("passenger name");
+  const idCol   = find("passengerid");
+  const prodCol = find("product detail");
+
+  // Fallback (TS needs at least one column)
+  const fallback = cols[0] ? [cols[0]] : [];
+
+  const cfg: ChartConfig = {
+    key: "main",
+    dimensions: [
+      { key: "seat",            columns: seatCol ? [seatCol] : fallback },
+      { key: "passenger_name",  columns: nameCol ? [nameCol] : fallback },
+      { key: "passenger_id",    columns: idCol   ? [idCol]   : fallback },
+      { key: "product_detail",  columns: prodCol ? [prodCol] : fallback },
+    ],
+  };
+
+  console.log("[Returning Config]", cfg);
+
+  return [cfg];
 };
 
 
+/* ---------------------------------------------
+   FIXED QUERIES (ALWAYS RETURNS ≥ 1 COLUMN)
+---------------------------------------------- */
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
-  return configs.map((cfg) => ({
-    queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
-  }));
+  return configs.map(cfg => {
+    const cols = cfg.dimensions.flatMap(d => d.columns || []);
+
+    console.log("[Query columns generated]", cols);
+
+    // Final guard — TS rejects empty queryColumns
+    if (!cols.length) {
+      console.error("Query has 0 columns — adding fallback empty");
+      return { queryColumns: [] };
+    }
+
+    return { queryColumns: cols };
+  });
 };
+
 
 /* ---------------------------------------------
    INIT
