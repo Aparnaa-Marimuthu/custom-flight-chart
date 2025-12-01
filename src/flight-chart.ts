@@ -1,13 +1,12 @@
 import {
   type ChartConfig,
-  type ChartModel,
   ChartToTSEvent,
   type CustomChartContext,
   getChartContext,
   type Query,
 } from "@thoughtspot/ts-chart-sdk";
 
-import flightSeatsSvg from "./assets/EJ_airbus.svg?raw";
+import flightSeatsSvg from "./assets/A320N_repeated_multiline_tooltip.svg?raw";
 
 // -------------------------------------------------------
 // INJECT YOUR CSS GLOBALLY (inside the TS iframe)
@@ -228,9 +227,16 @@ function createZoomControls(container: HTMLElement) {
 }
 
 function colorForStatus(status?: SeatStatus): string {
-  return status === "Frequent Traveller" || status === "Occupied"
-    ? "#d15d99"
-    : "#ffffff";
+  switch (status) {
+    case "Frequent Traveller":
+      return "#ff9933"; // orange
+    case "Occupied":
+      return "#4da6ff"; // blue
+    case "Empty":
+      return "#cccccc"; // grey
+    default:
+      return "#cccccc";
+  }
 }
 
 function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
@@ -462,78 +468,133 @@ async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
   }
 
   const svgRoot = svgBox;
-  Object.keys(seatData).forEach((seatKey) => {
-    const dom = findSeatDom(svgRoot, seatKey);
-    if (!dom) return;
+  /* COLOR EACH SEAT CORRECTLY */  
+svgRoot.querySelectorAll("g[id]:not(#legend) rect").forEach((rect: any) => {
+  rect.style.fill = colorForStatus("Empty");
+});
+Object.keys(seatData).forEach((seatKey) => {
+  const seatG = findSeatDom(svgRoot, seatKey);
+  if (!seatG) return;
 
-    const fill = colorForStatus(seatData[seatKey].status);
-    const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-    parts.forEach((p) => {
-      try {
-        p.setAttribute("fill", fill);
-      } catch {}
-    });
-  });
+  const status = seatData[seatKey].status;
+  const rect = seatG.querySelector("rect");
+  if (!rect) return;
+
+  // Apply dynamic fill color
+  rect.style.fill = colorForStatus(status);
+});
+
+
 }
 
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
-function attachInteractivity(container: HTMLElement, seatData: any) {  
-  container.addEventListener("mouseover", (ev: MouseEvent) => {  
-    const seatKey = resolveSeatKey(ev.target as Element, seatData);  
-    if (!seatKey) return;  
+// function attachInteractivity(container: HTMLElement, seatData: any) {  
+//   container.addEventListener("mouseover", (ev: MouseEvent) => {  
+//     const seatKey = resolveSeatKey(ev.target as Element, seatData);  
+//     if (!seatKey) return;  
   
-    const info = seatData[seatKey];  
+//     const info = seatData[seatKey];  
       
-    // Status-based tooltip styling  
-    const statusColor = 
-      info.status === "Frequent Traveller" ? "#ff9933" :   
-      info.status === "Occupied" ? "#4da6ff" : 
-      "#ffffff";
+//     // Status-based tooltip styling  
+//     const statusColor = 
+//       info.status === "Frequent Traveller" ? "#ff9933" :   
+//       info.status === "Occupied" ? "#4da6ff" : 
+//       "#ffffff";
 
-    showTooltip(
-      `
-      <strong>Seat No: ${seatKey}</strong>
-      <div class="tooltip-row">
-        <span class="tooltip-label">Status:</span>
-        <span class="tooltip-value" style="color:${statusColor}; font-weight:600;">
-          ${info.status}
-        </span>
-      </div>
-      <div class="tooltip-row">
-        <span class="tooltip-label">Passenger Name:</span>
-        <span class="tooltip-value">${info.name}</span>
-      </div>
-      <div class="tooltip-row">
-        <span class="tooltip-label">Frequent Traveller ID:</span>
-        <span class="tooltip-value">${info.travellerId}</span>
-      </div>
-      <div class="tooltip-row">
-        <span class="tooltip-label">Most Purchased Item:</span>
-        <span class="tooltip-value">${info.item}</span>
-      </div>
-      `,
-      ev.clientX,
-      ev.clientY
-    );
-  });  
+//     showTooltip(
+//       `
+//       <strong>Seat No: ${seatKey}</strong>
+//       <div class="tooltip-row">
+//         <span class="tooltip-label">Status:</span>
+//         <span class="tooltip-value" style="color:${statusColor}; font-weight:600;">
+//           ${info.status}
+//         </span>
+//       </div>
+//       <div class="tooltip-row">
+//         <span class="tooltip-label">Passenger Name:</span>
+//         <span class="tooltip-value">${info.name}</span>
+//       </div>
+//       <div class="tooltip-row">
+//         <span class="tooltip-label">Frequent Traveller ID:</span>
+//         <span class="tooltip-value">${info.travellerId}</span>
+//       </div>
+//       <div class="tooltip-row">
+//         <span class="tooltip-label">Most Purchased Item:</span>
+//         <span class="tooltip-value">${info.item}</span>
+//       </div>
+//       `,
+//       ev.clientX,
+//       ev.clientY
+//     );
+//   });  
 
-  container.addEventListener("mousemove", (ev) => {
-    const tt = document.getElementById("seat-tooltip");
-    if (tt?.style.display === "block") {
-      tt.style.left = ev.clientX + 12 + "px";
-      tt.style.top = ev.clientY + 12 + "px";
-    }
-  });
+//   container.addEventListener("mousemove", (ev) => {
+//     const tt = document.getElementById("seat-tooltip");
+//     if (tt?.style.display === "block") {
+//       tt.style.left = ev.clientX + 12 + "px";
+//       tt.style.top = ev.clientY + 12 + "px";
+//     }
+//   });
 
-  container.addEventListener("mouseout", () => {
+//   container.addEventListener("mouseout", () => {
+//     hideTooltip();
+//   });
+// }
+
+function attachInteractivity(container: HTMLElement, seatData: any) {
+
+  container.addEventListener("click", (ev: MouseEvent) => {
+  const seatKey = resolveSeatKey(ev.target as Element, seatData);
+
+  // Click outside
+  if (!seatKey) {
     hideTooltip();
-  });
+    return;
+  }
+
+  const seatEl = findSeatDom(container, seatKey);
+  if (!seatEl) return;
+
+  const info = seatData[seatKey];
+
+  // Seat bounding box coordinates
+  const bbox = (seatEl as any).getBoundingClientRect();
+  const x = bbox.left + bbox.width / 2;
+  const y = bbox.top - 10; // slightly above the seat
+  const statusColor =
+    info.status === "Frequent Traveller" ? "#ff9933" :
+    info.status === "Occupied" ? "#4da6ff" :
+    "#cccccc";
+
+  showTooltip(
+    `
+    <strong>Seat: ${seatKey}</strong>
+    <div class="tooltip-row">
+      <span class="tooltip-label">Passenger:</span>
+      <span class="tooltip-value">${info.name}</span>
+    </div>
+    <div class="tooltip-row">
+      <span class="tooltip-label">Purchased:</span>
+      <span class="tooltip-value">${info.item}</span>
+    </div>
+    <div class="tooltip-row">
+      <span class="tooltip-label">Status:</span>
+      <span class="tooltip-value" style="color:${statusColor};font-weight:600;">
+        ${info.status}
+      </span>
+    </div>
+    `,
+    x,
+    y
+  );
+});
 }
 
+
 function buildSeatData(queryResult: any) {
-  if (!queryResult || !queryResult.columns || !queryResult.data) {
+  if (!queryResult?.columns || !queryResult?.data) {
     console.warn("No query data found. Using empty dataset.");
     return {};
   }
@@ -547,31 +608,47 @@ function buildSeatData(queryResult: any) {
   const passengerIdIdx = columns.indexOf("passengerid");
   const productIdx = columns.indexOf("product detail");
 
+  if (seatIdx === -1) return {};
+
+  // Count occurrences of PassengerID → FT logic
   const passengerCount: Record<string, number> = {};
   queryResult.data.forEach((row: any[]) => {
     const pid = row[passengerIdIdx];
-    if (!pid) return;
-    passengerCount[pid] = (passengerCount[pid] || 0) + 1;
+    if (pid) passengerCount[pid] = (passengerCount[pid] || 0) + 1;
   });
 
   queryResult.data.forEach((row: any[]) => {
     const seat = row[seatIdx];
     if (!seat) return;
 
+    const name = row[passengerIdx];
     const pid = row[passengerIdIdx];
+    const item = row[productIdx];
 
-    const isFrequent = passengerCount[pid] > 1;
+    const appearsMoreThanOnce = pid && passengerCount[pid] > 1;
+
+    let status: SeatStatus;
+
+    if (!name && !pid) {
+      status = "Empty";
+    } else if (appearsMoreThanOnce) {
+      status = "Frequent Traveller";
+    } else {
+      status = "Occupied";
+    }
 
     seatMap[seat] = {
-      name: row[passengerIdx],
-      travellerId: pid,
-      item: row[productIdx],
-      status: isFrequent ? "Frequent Traveller" : "Occupied"
+      name: name || "-",
+      travellerId: pid || "-",
+      item: item || "-",
+      status,
     };
   });
 
   return seatMap;
 }
+
+
 
 
 
@@ -581,9 +658,26 @@ function buildSeatData(queryResult: any) {
 async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderStart);
   const queryResult = (ctx as any).data;
-  console.log("QUERY RESULT:", queryResult);
-  console.log("COLUMNS:", queryResult.columns);
-  console.log("DATA:", queryResult.data);
+
+  if (!queryResult || !queryResult.columns || !queryResult.data) {
+  console.warn("BYOC has no real data. Using dummy dataset for preview.");
+
+  // queryResult = {
+  //   columns: [
+  //     { name: "Seat" },
+  //     { name: "Passenger Name" },
+  //     { name: "PassengerID" },
+  //     { name: "Product Detail" },
+  //   ],
+  //   data: [
+  //     ["17E", "John Doe", "EJ001", "Water"],
+  //     ["14C", "Jane Smith", "EJ002", "Snacks"],
+  //     ["17E", "John Doe", "EJ001", "Coffee"], 
+  //     ["18B", "Peter", "EJ003", "Tea"],
+  //     ["18B", "Peter", "EJ003", "Beer"],   
+  //   ]
+  // };
+}
   const dynamicSeatData = buildSeatData(queryResult);
 
   const root =
@@ -606,38 +700,31 @@ async function renderChart(ctx: CustomChartContext) {
 /* ---------------------------------------------
    FIXED CONFIG
 ---------------------------------------------- */
-const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  const cols = chartModel.columns || [];
+const getFixedChartConfig = (): ChartConfig[] => {
 
-  const seatCol = cols.find(c => c.name.toLowerCase() === "seat");
-  const nameCol = cols.find(c => c.name.toLowerCase() === "passenger name");
-  const idCol = cols.find(c => c.name.toLowerCase() === "passengerid");
-  const prodCol = cols.find(c => c.name.toLowerCase() === "product detail");
-
-   return [
-  {
-    key: "main",
-    dimensions: [
-      {
-        key: "Seat",
-        columns: seatCol ? [seatCol] : []
-      },
-      {
-        key: "Passenger Name",
-        columns: nameCol ? [nameCol] : []
-      },
-      {
-        key: "Passenger ID",
-        columns: idCol ? [idCol] : []
-      },
-      {
-        key: "Product Detail",
-        columns: prodCol ? [prodCol] : []
-      }
-    ]
-  }
-];
-
+  return [
+    {
+      key: "main",
+      dimensions: [
+        {
+          key: "seat",
+          columns: [],
+        },
+        {
+          key: "passenger_name",
+          columns: [],
+        },
+        {
+          key: "passenger_id",
+          columns: [],
+        },
+        {
+          key: "product_detail",
+          columns: [],
+        },
+      ],
+    },
+  ];
 };
 
 
