@@ -595,11 +595,22 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
 
 function buildSeatData(queryResult: any) {
-  if (!queryResult?.columns || !queryResult?.data) {
-    console.warn("No query data found. Using empty dataset.");
-    return {};
-  }
+  if (!queryResult?.data || queryResult.data.length === 0) {
+  console.warn("No data returned — using preview dataset");
 
+  queryResult = {
+    columns: [
+      { name: "Seat" },
+      { name: "Passenger name" },
+      { name: "Passengerid" },
+      { name: "Product detail" },
+    ],
+    data: [
+      ["12A", "John", "EJ01", "Water"],
+      ["14B", "Mia", "EJ02", "Snacks"],
+    ],
+  };
+}
   const seatMap: Record<string, any> = {};
 
   const columns = queryResult.columns.map((c: any) => c.name.toLowerCase());
@@ -699,63 +710,39 @@ async function renderChart(ctx: CustomChartContext) {
 }
 
 /* ---------------------------------------------
-   FIXED CONFIG
+   FIXED CONFIG (DIMENSIONS USED FOR DRAGGABLE FIELDS)
 ---------------------------------------------- */
-/* ---------------------------------------------
-   FIXED CONFIG (AUTOMATIC COLUMN PICKER)
----------------------------------------------- */
-const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[]  => {
+const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   console.log("[ChartModel received]", chartModel);
 
-  const cols = chartModel?.columns || [];
-
-  // Helper to match column by name safely
-  const find = (name: string) =>
-    cols.find(c => c.name?.toLowerCase().trim() === name.toLowerCase().trim());
-
-  // Try mapping
-  const seatCol = find("seat");
-  const nameCol = find("passenger name");
-  const idCol   = find("passengerid");
-  const prodCol = find("product detail");
-
-  // Fallback (TS needs at least one column)
-  const fallback = cols[0] ? [cols[0]] : [];
-
-  const cfg: ChartConfig = {
-    key: "main",
-    dimensions: [
-      { key: "seat",            columns: seatCol ? [seatCol] : fallback },
-      { key: "passenger_name",  columns: nameCol ? [nameCol] : fallback },
-      { key: "passenger_id",    columns: idCol   ? [idCol]   : fallback },
-      { key: "product_detail",  columns: prodCol ? [prodCol] : fallback },
-    ],
-  };
-
-  console.log("[Returning Config]", cfg);
-
-  return [cfg];
+  return [
+    {
+      key: "main",
+      dimensions: [
+        { key: "seat",            columns: [] },
+        { key: "passenger_name",  columns: [] },
+        { key: "passenger_id",    columns: [] },
+        { key: "product_detail",  columns: [] },
+      ],
+    },
+  ];
 };
 
-
 /* ---------------------------------------------
-   FIXED QUERIES (ALWAYS RETURNS ≥ 1 COLUMN)
+   FIXED QUERIES (TS FILLS COLUMNS AFTER USER DRAGS)
 ---------------------------------------------- */
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map(cfg => {
-    const cols = cfg.dimensions.flatMap(d => d.columns || []);
+    const cols = cfg.dimensions.flatMap(d => d.columns);
 
     console.log("[Query columns generated]", cols);
 
-    // Final guard — TS rejects empty queryColumns
-    if (!cols.length) {
-      console.error("Query has 0 columns — adding fallback empty");
-      return { queryColumns: [] };
-    }
-
-    return { queryColumns: cols };
+    return {
+      queryColumns: cols,  // MUST be exactly what TS gives
+    };
   });
 };
+
 
 
 /* ---------------------------------------------
@@ -767,7 +754,15 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
-      visualPropEditorDefinition: { elements: [] },
+      visualPropEditorDefinition: { 
+        elements: [
+            {
+            type: "text",
+            key: "info",
+            label: "Seat Map",
+            defaultValue: "Custom Seat Map",
+            }
+      ] },
     });
 
   } catch (err) {
