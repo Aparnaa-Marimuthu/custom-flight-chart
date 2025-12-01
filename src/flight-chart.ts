@@ -2,7 +2,6 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
-  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
