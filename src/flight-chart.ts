@@ -178,30 +178,6 @@ body, html {
 
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
-const SEAT_DATA: Record<
-  string,
-  { name: string; travellerId: string; item: string; status: SeatStatus }
-> = {
-  "2A": {
-    name: "Oliver Bennett",
-    travellerId: "EZ9081123",
-    item: "sandwich and coffee",
-    status: "Frequent Traveller",
-  },
-  "2B": {
-    name: "Charlotte Hayes",
-    travellerId: "EZ9081124",
-    item: "sandwich",
-    status: "Occupied",
-  },
-  "4C": {
-    name: "James Whitmore",
-    travellerId: "EZ9081125",
-    item: "coffee",
-    status: "Occupied",
-  },
-};
-
 let currentZoom = 1.7;  
 const MIN_ZOOM = 1;  
 const MAX_ZOOM = 5;  
@@ -272,14 +248,14 @@ function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
   return null;
 }
 
-function resolveSeatKey(el: Element | null): string | null {
+function resolveSeatKey(el: Element | null, seatData: Record<string, any>): string | null {
   if (!el) return null;
 
   let curr: Element | null = el;
   while (curr) {
     if (curr.id) {
       const clean = curr.id.replace(/^seat_/, "");
-      if (SEAT_DATA[clean]) return clean;
+      if (seatData[clean]) return clean;
     }
     curr = curr.parentElement;
   }
@@ -458,7 +434,7 @@ function prepareSvgMarkup(rawSvg: string) {
 }
 
 /* ---------- LOAD + STYLE SVG (CLEAN) ---------- */
-async function loadAndStyleSVG(container: HTMLElement) {
+async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
   const mapWrapper = document.createElement("div");
   mapWrapper.className = "flight-seat-map-container";
   mapWrapper.style.position = "relative";
@@ -487,11 +463,11 @@ async function loadAndStyleSVG(container: HTMLElement) {
   }
 
   const svgRoot = svgBox;
-  Object.keys(SEAT_DATA).forEach((seatKey) => {
+  Object.keys(seatData).forEach((seatKey) => {
     const dom = findSeatDom(svgRoot, seatKey);
     if (!dom) return;
 
-    const fill = colorForStatus(SEAT_DATA[seatKey].status);
+    const fill = colorForStatus(seatData[seatKey].status);
     const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
     parts.forEach((p) => {
       try {
@@ -504,12 +480,12 @@ async function loadAndStyleSVG(container: HTMLElement) {
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
-function attachInteractivity(container: HTMLElement) {  
+function attachInteractivity(container: HTMLElement, seatData: any) {  
   container.addEventListener("mouseover", (ev: MouseEvent) => {  
-    const seatKey = resolveSeatKey(ev.target as Element);  
+    const seatKey = resolveSeatKey(ev.target as Element, seatData);  
     if (!seatKey) return;  
   
-    const info = SEAT_DATA[seatKey];  
+    const info = seatData[seatKey];  
       
     // Status-based tooltip styling  
     const statusColor = 
@@ -557,11 +533,56 @@ function attachInteractivity(container: HTMLElement) {
   });
 }
 
+function buildSeatData(queryResult: any) {
+  if (!queryResult || !queryResult.columns || !queryResult.data) {
+    console.warn("No query data found. Using empty dataset.");
+    return {};
+  }
+
+  const seatMap: Record<string, any> = {};
+
+  const columns = queryResult.columns.map((c: any) => c.name.toLowerCase());
+
+  const seatIdx = columns.indexOf("seat");
+  const passengerIdx = columns.indexOf("passenger name");
+  const passengerIdIdx = columns.indexOf("passengerid");
+  const productIdx = columns.indexOf("product detail");
+
+  const passengerCount: Record<string, number> = {};
+  queryResult.data.forEach((row: any[]) => {
+    const pid = row[passengerIdIdx];
+    if (!pid) return;
+    passengerCount[pid] = (passengerCount[pid] || 0) + 1;
+  });
+
+  queryResult.data.forEach((row: any[]) => {
+    const seat = row[seatIdx];
+    if (!seat) return;
+
+    const pid = row[passengerIdIdx];
+
+    const isFrequent = passengerCount[pid] > 1;
+
+    seatMap[seat] = {
+      name: row[passengerIdx],
+      travellerId: pid,
+      item: row[productIdx],
+      status: isFrequent ? "Frequent Traveller" : "Occupied"
+    };
+  });
+
+  return seatMap;
+}
+
+
+
 /* ---------------------------------------------
    RENDER
 ---------------------------------------------- */
 async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderStart);
+  const queryResult = (ctx as any).data;
+  const dynamicSeatData = buildSeatData(queryResult);
 
   const root =
     document.getElementById("flight-chart") ||
@@ -574,8 +595,8 @@ async function renderChart(ctx: CustomChartContext) {
 
   root.innerHTML = "";
 
-  loadAndStyleSVG(root);
-  attachInteractivity(root);
+  loadAndStyleSVG(root, dynamicSeatData);
+  attachInteractivity(root, dynamicSeatData);
 
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
@@ -610,14 +631,13 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
 ---------------------------------------------- */
 (async () => {
   try {
-    const ctx = await getChartContext({
+    await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
       visualPropEditorDefinition: { elements: [] },
     });
 
-    await renderChart(ctx);
   } catch (err) {
     console.error(err);
   }
