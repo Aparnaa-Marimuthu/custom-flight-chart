@@ -559,65 +559,120 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 }
 
 // -------------------------------------------------------
-//  NEW: BUILD SEAT DATA FROM THOUGHTSPOT CONTEXT
+// ✅ TYPESCRIPT-SAFE: BUILD SEAT DATA FROM THOUGHTSPOT
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
   
-  log(" Reading data from ThoughtSpot context");
+  log("📊 Reading data from ThoughtSpot context");
   
-  // Get the data array from context
-  const dataArr = (ctx as any).data?.[0]?.data || [];
-  
-  if (dataArr.length === 0) {
-    log(" No data received from ThoughtSpot");
-    return seatMap;
-  }
-
-  log(` Processing ${dataArr.length} rows from ThoughtSpot`);
-
-  // Expected column order (based on config):
-  // [0] = seat (attribute)
-  // [1] = passenger_name (attribute)
-  // [2] = pnr (attribute)
-  // [3] = trips (measure)
-  // [4] = spend (measure)
-  // [5] = fare_type (attribute)
-  // [6] = status (attribute)
-
-  dataArr.forEach((row: any[]) => {
-    const seatKey = row[0]?.toString() || "";
-    if (!seatKey) return;
-
-    const passengerName = row[1]?.toString() || "-";
-    const pnr = row[2]?.toString() || "-";
-    const trips = parseInt(row[3]?.toString() || "0");
-    const spend = parseFloat(row[4]?.toString() || "0");
-    const fareType = row[5]?.toString() || "N/A";
-    const statusStr = row[6]?.toString() || "Empty";
+  try {
+    const chartModel = ctx.getChartModel();
     
-    let status: SeatStatus;
-    if (statusStr === "Empty") {
-      status = "Empty";
-    } else if (statusStr === "Repeated Customer") {
-      status = "Frequent Traveller";
-    } else {
-      status = "Occupied";
+    if (!chartModel) {
+      log("⚠️ No chart model");
+      return seatMap;
+    }
+    
+    if (!chartModel.data || !chartModel.data[0]) {
+      log("⚠️ No data in chart model");
+      return seatMap;
     }
 
-    seatMap[seatKey] = {
-      name: passengerName,
-      travellerId: pnr,
-      trips: trips,
-      spend: spend,
-      item: fareType,
-      status: status,
-    };
-  });
+    const queryData = chartModel.data[0];
+    
+    // ✅ Access data as any to bypass TypeScript restrictions
+    const dataAny = queryData as any;
+    const dataPoints = dataAny.data;
+    const columns = dataAny.columns || [];
+    
+    if (!dataPoints) {
+      log("⚠️ No data points");
+      return seatMap;
+    }
 
-  log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
-  return seatMap;
+    // ✅ Get length safely
+    const dataLength = typeof dataPoints.length !== 'undefined' 
+      ? dataPoints.length 
+      : Object.keys(dataPoints).length;
+    
+    log(`📦 Processing ${dataLength} rows from ThoughtSpot`);
+    
+    if (columns.length > 0) {
+      log(`📋 Columns (${columns.length}):`, columns.map((c: any) => c.id || c.name));
+    }
+
+    // ✅ Iterate safely
+    for (let i = 0; i < dataLength; i++) {
+      try {
+        const row = dataPoints[i];
+        
+        if (!row) continue;
+        
+        // Handle both array and object formats
+        let rowData: any[];
+        if (Array.isArray(row)) {
+          rowData = row;
+        } else if (typeof row === 'object') {
+          rowData = Object.values(row);
+        } else {
+          continue;
+        }
+        
+        const seatKey = rowData[0]?.toString().trim() || "";
+        if (!seatKey) {
+          continue;
+        }
+
+        const passengerName = rowData[1]?.toString() || "-";
+        const pnr = rowData[2]?.toString() || "-";
+        const trips = parseInt(rowData[3]?.toString() || "0", 10);
+        const spend = parseFloat(rowData[4]?.toString() || "0");
+        const fareType = rowData[5]?.toString() || "N/A";
+        const statusStr = rowData[6]?.toString() || "Empty";
+        
+        let status: SeatStatus;
+        if (statusStr === "Empty") {
+          status = "Empty";
+        } else if (statusStr === "Repeated Customer") {
+          status = "Frequent Traveller";
+        } else {
+          status = "Occupied";
+        }
+
+        seatMap[seatKey] = {
+          name: passengerName,
+          travellerId: pnr,
+          trips: trips,
+          spend: spend,
+          item: fareType,
+          status: status,
+        };
+        
+      } catch (rowError) {
+        log(`❌ Error processing row ${i}:`, rowError);
+      }
+    }
+
+    log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
+    
+    // Log sample data
+    if (Object.keys(seatMap).length > 0) {
+      const sampleSeats = Object.keys(seatMap).slice(0, 3);
+      log("📌 Sample seats:", sampleSeats.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
+    } else {
+      log("⚠️ No seats were processed - check column mapping");
+    }
+    
+    return seatMap;
+    
+  } catch (error) {
+    log("❌ Error reading data from context:", error);
+    return seatMap;
+  }
 }
+
+
 
 // -------------------------------------------------------
 // RENDER - USES THOUGHTSPOT DATA
@@ -711,20 +766,19 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
 };
 
 // -------------------------------------------------------
-// INIT - WITH CONFIG EDITOR
+// INIT - LET THOUGHTSPOT CALL renderChart
 // -------------------------------------------------------
 (async () => {
   log("🚀 Initializing ThoughtSpot Chart with data model...");
 
   try {
-    const ctx = await getChartContext({
+      await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
-      renderChart,
+      renderChart,  // ✅ ThoughtSpot will call this when data is ready
       visualPropEditorDefinition: {
         elements: [],
       },
-      //  CORRECT SYNTAX for chartConfigEditorDefinition
       chartConfigEditorDefinition: [
         {
           key: "column",
@@ -754,7 +808,6 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
               label: "Number of Trips", 
               allowMeasureColumns: true, 
               maxColumnCount: 1,
-
             },
             { 
               key: "spend", 
@@ -779,10 +832,15 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       ]
     });
 
-    log("✅ Context received, rendering...");
-    await renderChart(ctx);
+    log("✅ Context created successfully");
+    log("⏳ Waiting for user to configure columns...");
+    // ❌ DON'T CALL renderChart() here
+    // ThoughtSpot will call it automatically when:
+    // 1. User drags columns into slots
+    // 2. Data query completes
     
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
   }
 })();
+
