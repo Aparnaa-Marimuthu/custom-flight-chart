@@ -559,7 +559,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 }
 
 // -------------------------------------------------------
-// ✅ TYPESCRIPT-SAFE: BUILD SEAT DATA FROM THOUGHTSPOT
+// ✅ MAP DATA BY COLUMN ID (NOT POSITION)
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
@@ -568,7 +568,9 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
   
   try {
     const chartModel = ctx.getChartModel();
-    log("Chart model:", JSON.stringify(chartModel, null, 2));
+    
+    // ✅ LOG CHART MODEL (will now work because renderChart is called)
+    log("📋 Chart model received:", JSON.stringify(chartModel, null, 2));
     
     if (!chartModel) {
       log("⚠️ No chart model");
@@ -581,56 +583,82 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     }
 
     const queryData = chartModel.data[0];
-    
-    // ✅ Access data as any to bypass TypeScript restrictions
     const dataAny = queryData as any;
     const dataPoints = dataAny.data;
-    const columns = dataAny.columns || [];
     
-    if (!dataPoints) {
+    if (!dataPoints || !dataPoints.dataValue) {
       log("⚠️ No data points");
       return seatMap;
     }
 
-    // ✅ Get length safely
-    const dataLength = typeof dataPoints.length !== 'undefined' 
-      ? dataPoints.length 
-      : Object.keys(dataPoints).length;
+    const columnIds = dataPoints.columns || [];
+    const dataRows = dataPoints.dataValue;
     
-    log(`📦 Processing ${dataLength} rows from ThoughtSpot`);
-    
-    if (columns.length > 0) {
-      log(`📋 Columns (${columns.length}):`, columns.map((c: any) => c.id || c.name));
+    if (!Array.isArray(dataRows)) {
+      log("❌ Data is not in expected format");
+      return seatMap;
     }
 
-    // ✅ Iterate safely
-    for (let i = 0; i < dataLength; i++) {
-      try {
-        const row = dataPoints[i];
-        
-        if (!row) continue;
-        
-        // Handle both array and object formats
-        let rowData: any[];
-        if (Array.isArray(row)) {
-          rowData = row;
-        } else if (typeof row === 'object') {
-          rowData = Object.values(row);
-        } else {
-          continue;
-        }
-        
-        const seatKey = rowData[0]?.toString().trim() || "";
-        if (!seatKey) {
-          continue;
-        }
+    log(`📦 Processing ${dataRows.length} rows from ThoughtSpot`);
+    log(`📋 Column IDs:`, columnIds);
 
-        const passengerName = rowData[1]?.toString() || "-";
-        const pnr = rowData[2]?.toString() || "-";
-        const trips = parseInt(rowData[3]?.toString() || "0", 10);
-        const spend = parseFloat(rowData[4]?.toString() || "0");
-        const fareType = rowData[5]?.toString() || "N/A";
-        const statusStr = rowData[6]?.toString() || "Empty";
+    const allColumns = (chartModel.columns || []).map(c => c as any);
+    
+    const findColumnIndex = (name: string): number => {
+      const col = allColumns.find((c: any) => {
+        const colName = (c.name || '').toLowerCase();
+        const colDisplay = (c.displayName || '').toLowerCase();
+        return colName === name.toLowerCase() || colDisplay === name.toLowerCase();
+      });
+      
+      if (!col) {
+        log(`⚠️ Column not found: ${name}`);
+        return -1;
+      }
+      
+      const index = columnIds.indexOf(col.id);
+      log(`✅ Found ${name} at index ${index} (ID: ${col.id})`);
+      return index;
+    };
+
+    const seatIndex = findColumnIndex("Seat");
+    const statusIndex = findColumnIndex("Status");
+    const nameIndex = findColumnIndex("Passenger Name");
+    const pnrIndex = findColumnIndex("Pnr");
+    const tripsIndex = findColumnIndex("Total No Of Travel");
+    const spendIndex = findColumnIndex("Total Amont Spent");
+    const fareTypeIndex = findColumnIndex("Fare Type");
+
+    if (seatIndex === -1 || statusIndex === -1) {
+      log("❌ Required columns (Seat, Status) not found");
+      return seatMap;
+    }
+
+    log(`📍 Column mapping:
+      Seat: ${seatIndex}
+      Status: ${statusIndex}
+      Name: ${nameIndex}
+      PNR: ${pnrIndex}
+      Trips: ${tripsIndex}
+      Spend: ${spendIndex}
+      FareType: ${fareTypeIndex}
+    `);
+
+    for (let i = 0; i < dataRows.length; i++) {
+      try {
+        const row = dataRows[i];
+        
+        if (!Array.isArray(row)) continue;
+        
+        const seatKey = row[seatIndex]?.toString().trim() || "";
+        if (!seatKey) continue;
+
+        const statusStr = row[statusIndex]?.toString() || "Empty";
+        const passengerName = nameIndex >= 0 ? (row[nameIndex]?.toString() || "-") : "-";
+        const pnr = pnrIndex >= 0 ? (row[pnrIndex]?.toString() || "-") : "-";
+        const trips = tripsIndex >= 0 ? parseInt(row[tripsIndex]?.toString() || "0", 10) : 0;
+        const spend = spendIndex >= 0 ? parseFloat(row[spendIndex]?.toString() || "0") : 0;
+        const fareType = fareTypeIndex >= 0 ? (row[fareTypeIndex]?.toString() || "N/A") : "N/A";
         
         let status: SeatStatus;
         if (statusStr === "Empty") {
@@ -657,12 +685,11 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
     
-    // Log sample data
     if (Object.keys(seatMap).length > 0) {
       const sampleSeats = Object.keys(seatMap).slice(0, 3);
-      log("📌 Sample seats:", sampleSeats.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
-    } else {
-      log("⚠️ No seats were processed - check column mapping");
+      log("📌 Sample seats:", sampleSeats.map(k => 
+        `${k}: ${seatMap[k].name} (${seatMap[k].status})`
+      ));
     }
     
     return seatMap;
@@ -673,46 +700,48 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
   }
 }
 
-
-
 // -------------------------------------------------------
 // RENDER - USES THOUGHTSPOT DATA
 // -------------------------------------------------------
 async function renderChart(ctx: CustomChartContext) {
-  log("🎨 renderChart() called - using ThoughtSpot data");
-  ctx.emitEvent(ChartToTSEvent.RenderStart);
+  try {
+    log("🎨 renderChart() called - using ThoughtSpot data");
+    ctx.emitEvent(ChartToTSEvent.RenderStart);
 
-  // ✅ USE THOUGHTSPOT DATA
-  const dynamicSeatData = buildSeatDataFromContext(ctx);
+    const dynamicSeatData = buildSeatDataFromContext(ctx);
 
-  if (Object.keys(dynamicSeatData).length === 0) {
-    log("⚠️ No seat data to render");
-    const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;'>No data available. Please configure the chart.</div>";
+    if (Object.keys(dynamicSeatData).length === 0) {
+      log("⚠️ No seat data to render");
+      const root = document.getElementById("flight-chart") || document.body;
+      root.innerHTML = "<div style='padding:20px;text-align:center;'>No data available. Please add data to the worksheet.</div>";
+      ctx.emitEvent(ChartToTSEvent.RenderComplete);
+      return;
+    }
+
+    const root =
+      document.getElementById("flight-chart") ||
+      (() => {
+        const div = document.createElement("div");
+        div.id = "flight-chart";
+        document.body.appendChild(div);
+        return div;
+      })();
+
+    root.innerHTML = "";
+
+    await loadAndStyleSVG(root, dynamicSeatData);
+    attachInteractivity(root, dynamicSeatData);
+
+    log("✅ Rendering complete");
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    return;
+  } catch (error) {
+    log("❌ FATAL ERROR in renderChart:", error);
+    ctx.emitEvent(ChartToTSEvent.RenderComplete);
   }
-
-  const root =
-    document.getElementById("flight-chart") ||
-    (() => {
-      const div = document.createElement("div");
-      div.id = "flight-chart";
-      document.body.appendChild(div);
-      return div;
-    })();
-
-  root.innerHTML = "";
-
-  await loadAndStyleSVG(root, dynamicSeatData);
-  attachInteractivity(root, dynamicSeatData);
-
-  log("✅ Rendering complete");
-  ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
 
 // -------------------------------------------------------
-// CHART CONFIG - WITH PROPER COLUMN MAPPING
+// CHART CONFIG - ✅ BACKWARDS COMPATIBLE
 // -------------------------------------------------------
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("📋 Building chart config from model");
@@ -723,60 +752,46 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
 
   log(`Found ${attributes.length} attributes and ${measures.length} measures`);
 
-  return [
+  // ✅ Auto-populate if columns exist (handles saved configs)
+  const config: ChartConfig[] = [
     {
       key: "main",
       dimensions: [
-        { 
-          key: "seat", 
-          columns: attributes.length > 0 ? [attributes[0]] : [] 
-        },
-        { 
-          key: "passenger_name", 
-          columns: attributes.length > 1 ? [attributes[1]] : [] 
-        },
-        { 
-          key: "pnr", 
-          columns: attributes.length > 2 ? [attributes[2]] : [] 
-        },
-        { 
-          key: "trips", 
-          columns: measures.length > 0 ? [measures[0]] : [] 
-        },
-        { 
-          key: "spend", 
-          columns: measures.length > 1 ? [measures[1]] : [] 
-        },
-        { 
-          key: "fare_type", 
-          columns: attributes.length > 3 ? [attributes[3]] : [] 
-        },
-        { 
-          key: "status", 
-          columns: attributes.length > 4 ? [attributes[4]] : [] 
-        },
+        { key: "seat", columns: attributes[0] ? [attributes[0]] : [] },
+        { key: "passenger_name", columns: attributes[1] ? [attributes[1]] : [] },
+        { key: "pnr", columns: attributes[2] ? [attributes[2]] : [] },
+        { key: "trips", columns: measures[0] ? [measures[0]] : [] },
+        { key: "spend", columns: measures[1] ? [measures[1]] : [] },
+        { key: "fare_type", columns: attributes[3] ? [attributes[3]] : [] },
+        { key: "status", columns: attributes[4] ? [attributes[4]] : [] },
       ],
     },
   ];
+
+  const configuredCount = config[0].dimensions.filter(d => d.columns.length > 0).length;
+  log(`✅ Config created with ${configuredCount} configured dimensions`);
+  
+  return config;
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
+  log("📝 Generating queries from config");
   return configs.map((cfg) => ({
     queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
   }));
 };
 
 // -------------------------------------------------------
-// INIT - LET THOUGHTSPOT CALL renderChart
+// INIT
 // -------------------------------------------------------
 (async () => {
   log("🚀 Initializing ThoughtSpot Chart with data model...");
 
   try {
-      await getChartContext({
+    await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
-      renderChart,  // ✅ ThoughtSpot will call this when data is ready
+      renderChart,
       visualPropEditorDefinition: {
         elements: [],
       },
@@ -833,15 +848,25 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       ]
     });
 
-    log("✅ Context created successfully");
-    log("⏳ Waiting for user to configure columns...");
-    // ❌ DON'T CALL renderChart() here
-    // ThoughtSpot will call it automatically when:
-    // 1. User drags columns into slots
-    // 2. Data query completes
+    log("✅ Context created successfully - ThoughtSpot will call renderChart when ready");
     
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
+    // ✅ Show error in UI
+    const root = document.getElementById("flight-chart") || document.body;
+    root.innerHTML = `<div style='padding:20px;text-align:center;color:#d32f2f;font-family:sans-serif;'>
+      <h3>Chart Initialization Failed</h3>
+      <p>Please try:</p>
+      <ol style='text-align:left;max-width:400px;margin:20px auto;'>
+        <li>Remove this chart from the liveboard</li>
+        <li>Clear browser cache (Ctrl+Shift+Delete)</li>
+        <li>Refresh the page</li>
+        <li>Add the chart again</li>
+      </ol>
+      <details style='margin-top:20px;'>
+        <summary style='cursor:pointer;color:#666;'>Technical Details</summary>
+        <pre style='text-align:left;background:#f5f5f5;padding:10px;margin-top:10px;font-size:11px;overflow:auto;'>${err}</pre>
+      </details>
+    </div>`;
   }
 })();
-
