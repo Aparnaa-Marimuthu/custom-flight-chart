@@ -769,20 +769,17 @@ await getChartContext({
   getQueriesFromChartConfig: getFixedQueries,
   renderChart,
 
- chartConfigEditorDefinition: [
-  {
-    key: "main",
-    label: "Flight Seat Configuration",
-    columnSections: [
-      { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
-    ]
-  }
-],
-  visualPropEditorDefinition: {
-    elements: [] // Leave empty unless you're adding properties
-  }
+  chartConfigEditorDefinition: [
+    {
+      key: "main",
+      label: "Flight Seat Configuration",
+      columnSections: [
+        { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
+      ]
+    }
+  ]
 });
 
