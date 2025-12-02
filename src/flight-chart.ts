@@ -568,7 +568,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
   
   try {
     const chartModel = ctx.getChartModel();
-    log("Chart model:", JSON.stringify(chartModel, null, 2));
     
     if (!chartModel) {
       log("⚠️ No chart model");
@@ -581,8 +580,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     }
 
     const queryData = chartModel.data[0];
-    
-    // ✅ Access data as any to bypass TypeScript restrictions
     const dataAny = queryData as any;
     const dataPoints = dataAny.data;
     const columns = dataAny.columns || [];
@@ -592,10 +589,35 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return seatMap;
     }
 
+    // ✅ CRITICAL DEBUG: Show actual data structure
+    log("🔍 RAW DATA STRUCTURE:");
+    log("typeof dataPoints:", typeof dataPoints);
+    log("dataPoints keys:", Object.keys(dataPoints));
+    log("Is array?", Array.isArray(dataPoints));
+    
+    // ✅ Check if it's object with 'dataValue' property
+    if (dataPoints.dataValue) {
+      log("🔍 Found dataValue property!");
+      log("dataValue type:", typeof dataPoints.dataValue);
+      log("dataValue sample:", dataPoints.dataValue.slice ? dataPoints.dataValue.slice(0, 3) : dataPoints.dataValue);
+    }
+    
+    // ✅ Log actual column IDs from data
+    if (dataPoints.columns) {
+      log("🔍 Data columns:", dataPoints.columns);
+    }
+    
+    // ✅ Log first few raw rows
+    if (Array.isArray(dataPoints)) {
+      log("🔍 First 3 rows (array format):", dataPoints.slice(0, 3));
+    } else if (dataPoints.dataValue && Array.isArray(dataPoints.dataValue)) {
+      log("🔍 First 3 rows (dataValue format):", dataPoints.dataValue.slice(0, 3));
+    }
+
     // ✅ Get length safely
     const dataLength = typeof dataPoints.length !== 'undefined' 
       ? dataPoints.length 
-      : Object.keys(dataPoints).length;
+      : (dataPoints.dataValue?.length || Object.keys(dataPoints).length);
     
     log(`📦 Processing ${dataLength} rows from ThoughtSpot`);
     
@@ -603,12 +625,24 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       log(`📋 Columns (${columns.length}):`, columns.map((c: any) => c.id || c.name));
     }
 
-    // ✅ Iterate safely
-    for (let i = 0; i < dataLength; i++) {
+    // ✅ Try to extract from dataValue if it exists
+    const actualData = dataPoints.dataValue || dataPoints;
+    
+    if (!Array.isArray(actualData)) {
+      log("❌ Data is not an array, cannot process");
+      log("Data type:", typeof actualData);
+      log("Data keys:", Object.keys(actualData));
+      return seatMap;
+    }
+
+    // ✅ Iterate through actual data
+    for (let i = 0; i < actualData.length; i++) {
       try {
-        const row = dataPoints[i];
+        const row = actualData[i];
         
         if (!row) continue;
+        
+        log(`🔍 Row ${i}:`, row);
         
         // Handle both array and object formats
         let rowData: any[];
@@ -620,8 +654,11 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           continue;
         }
         
+        log(`🔍 Row ${i} values:`, rowData);
+        
         const seatKey = rowData[0]?.toString().trim() || "";
         if (!seatKey) {
+          log(`⚠️ Row ${i} has no seat key`);
           continue;
         }
 
@@ -631,6 +668,8 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         const spend = parseFloat(rowData[4]?.toString() || "0");
         const fareType = rowData[5]?.toString() || "N/A";
         const statusStr = rowData[6]?.toString() || "Empty";
+        
+        log(`✅ Extracted seat ${seatKey}: ${passengerName}, ${statusStr}`);
         
         let status: SeatStatus;
         if (statusStr === "Empty") {
@@ -657,7 +696,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
     
-    // Log sample data
     if (Object.keys(seatMap).length > 0) {
       const sampleSeats = Object.keys(seatMap).slice(0, 3);
       log("📌 Sample seats:", sampleSeats.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
@@ -773,10 +811,10 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("🚀 Initializing ThoughtSpot Chart with data model...");
 
   try {
-      await getChartContext({
+    const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
-      renderChart,  // ✅ ThoughtSpot will call this when data is ready
+      renderChart,
       visualPropEditorDefinition: {
         elements: [],
       },
@@ -834,14 +872,55 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
     });
 
     log("✅ Context created successfully");
-    log("⏳ Waiting for user to configure columns...");
-    // ❌ DON'T CALL renderChart() here
-    // ThoughtSpot will call it automatically when:
-    // 1. User drags columns into slots
-    // 2. Data query completes
+    
+    // ✅ CRITICAL FIX: Poll for data and render when available
+    const checkAndRender = async () => {
+      try {
+        const chartModel = ctx.getChartModel();
+        const hasData = chartModel?.data?.[0]?.data;
+        
+        if (hasData) {
+          log("✅ Data is available, rendering chart...");
+          await renderChart(ctx);
+          return true;
+        } else {
+          log("⏳ No data yet...");
+          return false;
+        }
+      } catch (e) {
+        log("⚠️ Error checking for data:", e);
+        return false;
+      }
+    };
+
+    // Try immediate render
+    const rendered = await checkAndRender();
+    
+    if (!rendered) {
+      log("⏳ Waiting for data... will retry...");
+      
+      // Poll every 2 seconds for up to 30 seconds
+      let attempts = 0;
+      const maxAttempts = 15;
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        log(`🔄 Attempt ${attempts}/${maxAttempts} to check for data...`);
+        
+        const success = await checkAndRender();
+        
+        if (success || attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          if (!success) {
+            log("⚠️ No data received after 30 seconds. Please configure columns.");
+          }
+        }
+      }, 2000);
+    }
     
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
   }
 })();
+
 
