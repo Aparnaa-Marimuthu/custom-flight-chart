@@ -773,10 +773,10 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("🚀 Initializing ThoughtSpot Chart with data model...");
 
   try {
-      await getChartContext({
+    const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
-      renderChart,  // ✅ ThoughtSpot will call this when data is ready
+      renderChart,
       visualPropEditorDefinition: {
         elements: [],
       },
@@ -834,14 +834,55 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
     });
 
     log("✅ Context created successfully");
-    log("⏳ Waiting for user to configure columns...");
-    // ❌ DON'T CALL renderChart() here
-    // ThoughtSpot will call it automatically when:
-    // 1. User drags columns into slots
-    // 2. Data query completes
+    
+    // ✅ CRITICAL FIX: Poll for data and render when available
+    const checkAndRender = async () => {
+      try {
+        const chartModel = ctx.getChartModel();
+        const hasData = chartModel?.data?.[0]?.data;
+        
+        if (hasData) {
+          log("✅ Data is available, rendering chart...");
+          await renderChart(ctx);
+          return true;
+        } else {
+          log("⏳ No data yet...");
+          return false;
+        }
+      } catch (e) {
+        log("⚠️ Error checking for data:", e);
+        return false;
+      }
+    };
+
+    // Try immediate render
+    const rendered = await checkAndRender();
+    
+    if (!rendered) {
+      log("⏳ Waiting for data... will retry...");
+      
+      // Poll every 2 seconds for up to 30 seconds
+      let attempts = 0;
+      const maxAttempts = 15;
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        log(`🔄 Attempt ${attempts}/${maxAttempts} to check for data...`);
+        
+        const success = await checkAndRender();
+        
+        if (success || attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          if (!success) {
+            log("⚠️ No data received after 30 seconds. Please configure columns.");
+          }
+        }
+      }, 2000);
+    }
     
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
   }
 })();
+
 
