@@ -568,6 +568,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
   
   try {
     const chartModel = ctx.getChartModel();
+    log("Chart model:", JSON.stringify(chartModel, null, 2));
     
     if (!chartModel) {
       log("⚠️ No chart model");
