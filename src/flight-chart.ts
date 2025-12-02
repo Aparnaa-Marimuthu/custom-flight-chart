@@ -441,6 +441,7 @@ function prepareSvgMarkup(rawSvg: string) {
 
 /* ---------- LOAD + STYLE SVG (CLEAN) ---------- */
 async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
+  console.log(" Loading SVG and applying seat coloring. Seat data:", seatData);
   const mapWrapper = document.createElement("div");
   mapWrapper.className = "flight-seat-map-container";
   mapWrapper.style.position = "relative";
@@ -484,7 +485,7 @@ Object.keys(seatData).forEach((seatKey) => {
   // Apply dynamic fill color
   rect.style.fill = colorForStatus(status);
 });
-
+console.log(" Finished applying seat colors.");
 
 }
 
@@ -595,6 +596,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
 
 function buildSeatData(queryResult: any) {
+  console.log(" buildSeatData() received:", queryResult);
   if (!queryResult?.data || queryResult.data.length === 0) {
   console.warn("No data returned — using preview dataset");
 
@@ -655,6 +657,7 @@ function buildSeatData(queryResult: any) {
       item: item || "-",
       status,
     };
+    console.log(` → Seat ${seat} mapped to`, seatMap[seat]);
   });
 
   return seatMap;
@@ -668,6 +671,8 @@ function buildSeatData(queryResult: any) {
    RENDER
 ---------------------------------------------- */
 async function renderChart(ctx: CustomChartContext) {
+console.log(" renderChart() called");
+console.log(" Raw queryResult from TS:", (ctx as any).data);
   ctx.emitEvent(ChartToTSEvent.RenderStart);
   const queryResult = (ctx as any).data;
 
@@ -718,20 +723,35 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map(cfg => {
     const queryColumns: QueryColumn[] = [];
 
+    // Collect all dragged columns
     cfg.dimensions.forEach(dim => {
-      dim.columns.forEach(col => {
-        queryColumns.push(col);
-      });
+      if (dim.columns && dim.columns.length > 0) {
+        dim.columns.forEach(col => queryColumns.push(col));
+      }
     });
 
+    // If user has not dragged anything, force one real column
+    if (queryColumns.length === 0) {
+      console.warn(" No fields selected — forcing first available column.");
+      
+      // Pick the first dimension
+      const firstDim = cfg.dimensions[0];
 
-  if (queryColumns.length === 0) {
-    return { queryColumns: [] };   // NOTHING, not a fake column
-  }
+      if (firstDim && firstDim.columns && firstDim.columns.length > 0) {
+        console.log(" Using first dimension’s first column:", firstDim.columns[0]);
+        return { queryColumns: [firstDim.columns[0]] };
+      }
 
+      // If ThoughtSpot hasn't injected any columns yet → fail gracefully
+      console.error(" No real columns available — ThoughtSpot can't run empty queries.");
+      return { queryColumns: [] };
+    }
+
+    console.log(" Query columns:", queryColumns);
     return { queryColumns };
   });
 };
+
 
 /* ---------------------------------------------
    INIT
@@ -757,4 +777,8 @@ await getChartContext({
     elements: [] // Leave empty unless you're adding properties
   }
 });
-
+console.log(" BYOC Chart Initialized");
+console.log(" Default ChartConfig:", getFixedChartConfig());
+console.log(" Editor Definition Loaded:", {
+  sections: ["seat", "passenger_name", "passenger_id", "product_detail"]
+});
