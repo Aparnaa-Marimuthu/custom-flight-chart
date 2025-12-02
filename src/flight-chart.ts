@@ -559,7 +559,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 }
 
 // -------------------------------------------------------
-// ✅ MAP DATA BY COLUMN ID (NOT POSITION)
+// ✅ TYPESCRIPT-SAFE: BUILD SEAT DATA FROM THOUGHTSPOT
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
@@ -568,6 +568,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
   
   try {
     const chartModel = ctx.getChartModel();
+    log("Chart model:", JSON.stringify(chartModel, null, 2));
     
     if (!chartModel) {
       log("⚠️ No chart model");
@@ -580,88 +581,56 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     }
 
     const queryData = chartModel.data[0];
+    
+    // ✅ Access data as any to bypass TypeScript restrictions
     const dataAny = queryData as any;
     const dataPoints = dataAny.data;
+    const columns = dataAny.columns || [];
     
-    if (!dataPoints || !dataPoints.dataValue) {
+    if (!dataPoints) {
       log("⚠️ No data points");
       return seatMap;
     }
 
-    // ✅ Get column IDs to find correct indices
-    const columnIds = dataPoints.columns || [];
-    const dataRows = dataPoints.dataValue;
+    // ✅ Get length safely
+    const dataLength = typeof dataPoints.length !== 'undefined' 
+      ? dataPoints.length 
+      : Object.keys(dataPoints).length;
     
-    if (!Array.isArray(dataRows)) {
-      log("❌ Data is not in expected format");
-      return seatMap;
+    log(`📦 Processing ${dataLength} rows from ThoughtSpot`);
+    
+    if (columns.length > 0) {
+      log(`📋 Columns (${columns.length}):`, columns.map((c: any) => c.id || c.name));
     }
 
-    log(`📦 Processing ${dataRows.length} rows from ThoughtSpot`);
-    log(`📋 Column IDs:`, columnIds);
-
-    // ✅ Find column indices by matching column names from chartModel
-    const allColumns = chartModel.columns || [];
-    
-    // ✅ TYPE-SAFE VERSION
-    const findColumnIndex = (name: string): number => {
-      const col = allColumns.find(c => {
-        const colAny = c as any; // ✅ Cast to bypass TypeScript
-        const colName = c.name?.toLowerCase() || '';
-        const colDisplay = colAny.displayName?.toLowerCase() || '';
-        return colName === name.toLowerCase() || colDisplay === name.toLowerCase();
-      });
-      
-      if (!col) {
-        log(`⚠️ Column not found: ${name}`);
-        return -1;
-      }
-      
-      const index = columnIds.indexOf((col as any).id || col.id);
-      log(`✅ Found ${name} at index ${index} (ID: ${(col as any).id || col.id})`);
-      return index;
-    };
-
-
-    const seatIndex = findColumnIndex("Seat");
-    const statusIndex = findColumnIndex("Status");
-    const nameIndex = findColumnIndex("Passenger Name");
-    const pnrIndex = findColumnIndex("Pnr");
-    const tripsIndex = findColumnIndex("Total No Of Travel");
-    const spendIndex = findColumnIndex("Total Amont Spent");
-    const fareTypeIndex = findColumnIndex("Fare Type");
-
-    if (seatIndex === -1 || statusIndex === -1) {
-      log("❌ Required columns (Seat, Status) not found");
-      return seatMap;
-    }
-
-    log(`📍 Column mapping:
-      Seat: ${seatIndex}
-      Status: ${statusIndex}
-      Name: ${nameIndex}
-      PNR: ${pnrIndex}
-      Trips: ${tripsIndex}
-      Spend: ${spendIndex}
-      FareType: ${fareTypeIndex}
-    `);
-
-    // ✅ Iterate through rows using correct indices
-    for (let i = 0; i < dataRows.length; i++) {
+    // ✅ Iterate safely
+    for (let i = 0; i < dataLength; i++) {
       try {
-        const row = dataRows[i];
+        const row = dataPoints[i];
         
-        if (!Array.isArray(row)) continue;
+        if (!row) continue;
         
-        const seatKey = row[seatIndex]?.toString().trim() || "";
-        if (!seatKey) continue;
+        // Handle both array and object formats
+        let rowData: any[];
+        if (Array.isArray(row)) {
+          rowData = row;
+        } else if (typeof row === 'object') {
+          rowData = Object.values(row);
+        } else {
+          continue;
+        }
+        
+        const seatKey = rowData[0]?.toString().trim() || "";
+        if (!seatKey) {
+          continue;
+        }
 
-        const statusStr = row[statusIndex]?.toString() || "Empty";
-        const passengerName = nameIndex >= 0 ? (row[nameIndex]?.toString() || "-") : "-";
-        const pnr = pnrIndex >= 0 ? (row[pnrIndex]?.toString() || "-") : "-";
-        const trips = tripsIndex >= 0 ? parseInt(row[tripsIndex]?.toString() || "0", 10) : 0;
-        const spend = spendIndex >= 0 ? parseFloat(row[spendIndex]?.toString() || "0") : 0;
-        const fareType = fareTypeIndex >= 0 ? (row[fareTypeIndex]?.toString() || "N/A") : "N/A";
+        const passengerName = rowData[1]?.toString() || "-";
+        const pnr = rowData[2]?.toString() || "-";
+        const trips = parseInt(rowData[3]?.toString() || "0", 10);
+        const spend = parseFloat(rowData[4]?.toString() || "0");
+        const fareType = rowData[5]?.toString() || "N/A";
+        const statusStr = rowData[6]?.toString() || "Empty";
         
         let status: SeatStatus;
         if (statusStr === "Empty") {
@@ -672,7 +641,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           status = "Occupied";
         }
 
-        // ✅ Only keep the LAST status if same seat appears multiple times
         seatMap[seatKey] = {
           name: passengerName,
           travellerId: pnr,
@@ -689,11 +657,12 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
     
+    // Log sample data
     if (Object.keys(seatMap).length > 0) {
       const sampleSeats = Object.keys(seatMap).slice(0, 3);
-      log("📌 Sample seats:", sampleSeats.map(k => 
-        `${k}: ${seatMap[k].name} (${seatMap[k].status})`
-      ));
+      log("📌 Sample seats:", sampleSeats.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
+    } else {
+      log("⚠️ No seats were processed - check column mapping");
     }
     
     return seatMap;
@@ -706,33 +675,12 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
 
 
-
 // -------------------------------------------------------
 // RENDER - USES THOUGHTSPOT DATA
 // -------------------------------------------------------
 async function renderChart(ctx: CustomChartContext) {
   log("🎨 renderChart() called - using ThoughtSpot data");
   ctx.emitEvent(ChartToTSEvent.RenderStart);
-
-  // ✅ CHECK: Are columns configured by user?
-  const chartModel = ctx.getChartModel();
-  const hasRequiredColumns = chartModel?.columns?.some(c => 
-    c.name === "Seat" || c.name === "Status"
-  );
-
-  if (!hasRequiredColumns) {
-    log("⚠️ Required columns not configured by user");
-    const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;color:#666;'>" +
-      "Please configure the chart:<br><br>" +
-      "1. Drag <strong>Seat</strong> to 'Seat Number' slot<br>" +
-      "2. Drag <strong>Status</strong> to 'Status' slot<br>" +
-      "3. Add other columns as needed<br>" +
-      "4. Click <strong>Apply</strong>" +
-      "</div>";
-    ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    return;
-  }
 
   // ✅ USE THOUGHTSPOT DATA
   const dynamicSeatData = buildSeatDataFromContext(ctx);
@@ -763,7 +711,6 @@ async function renderChart(ctx: CustomChartContext) {
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
 
-
 // -------------------------------------------------------
 // CHART CONFIG - WITH PROPER COLUMN MAPPING
 // -------------------------------------------------------
@@ -776,44 +723,42 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
 
   log(`Found ${attributes.length} attributes and ${measures.length} measures`);
 
-  // ✅ Return empty dimensions - force user to configure
   return [
     {
       key: "main",
       dimensions: [
         { 
           key: "seat", 
-          columns: [] // ❌ Don't auto-populate
+          columns: attributes.length > 0 ? [attributes[0]] : [] 
         },
         { 
           key: "passenger_name", 
-          columns: []
+          columns: attributes.length > 1 ? [attributes[1]] : [] 
         },
         { 
           key: "pnr", 
-          columns: []
+          columns: attributes.length > 2 ? [attributes[2]] : [] 
         },
         { 
           key: "trips", 
-          columns: []
+          columns: measures.length > 0 ? [measures[0]] : [] 
         },
         { 
           key: "spend", 
-          columns: []
+          columns: measures.length > 1 ? [measures[1]] : [] 
         },
         { 
           key: "fare_type", 
-          columns: []
+          columns: attributes.length > 3 ? [attributes[3]] : [] 
         },
         { 
           key: "status", 
-          columns: []
+          columns: attributes.length > 4 ? [attributes[4]] : [] 
         },
       ],
     },
   ];
 };
-
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map((cfg) => ({
@@ -828,10 +773,10 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   log("🚀 Initializing ThoughtSpot Chart with data model...");
 
   try {
-    const ctx = await getChartContext({
+      await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
-      renderChart,
+      renderChart,  // ✅ ThoughtSpot will call this when data is ready
       visualPropEditorDefinition: {
         elements: [],
       },
@@ -889,55 +834,14 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
     });
 
     log("✅ Context created successfully");
-    
-    // ✅ CRITICAL FIX: Poll for data and render when available
-    const checkAndRender = async () => {
-      try {
-        const chartModel = ctx.getChartModel();
-        const hasData = chartModel?.data?.[0]?.data;
-        
-        if (hasData) {
-          log("✅ Data is available, rendering chart...");
-          await renderChart(ctx);
-          return true;
-        } else {
-          log("⏳ No data yet...");
-          return false;
-        }
-      } catch (e) {
-        log("⚠️ Error checking for data:", e);
-        return false;
-      }
-    };
-
-    // Try immediate render
-    const rendered = await checkAndRender();
-    
-    if (!rendered) {
-      log("⏳ Waiting for data... will retry...");
-      
-      // Poll every 2 seconds for up to 30 seconds
-      let attempts = 0;
-      const maxAttempts = 15;
-      
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        log(`🔄 Attempt ${attempts}/${maxAttempts} to check for data...`);
-        
-        const success = await checkAndRender();
-        
-        if (success || attempts >= maxAttempts) {
-          clearInterval(pollInterval);
-          if (!success) {
-            log("⚠️ No data received after 30 seconds. Please configure columns.");
-          }
-        }
-      }, 2000);
-    }
+    log("⏳ Waiting for user to configure columns...");
+    // ❌ DON'T CALL renderChart() here
+    // ThoughtSpot will call it automatically when:
+    // 1. User drags columns into slots
+    // 2. Data query completes
     
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
   }
 })();
-
 
