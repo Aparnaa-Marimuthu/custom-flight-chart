@@ -656,18 +656,18 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         
         log(`🔍 Row ${i} values:`, rowData);
         
-        const seatKey = rowData[0]?.toString().trim() || "";
+       const seatKey = rowData[1]?.toString().trim() || "";  
         if (!seatKey) {
           log(`⚠️ Row ${i} has no seat key`);
           continue;
         }
 
-        const passengerName = rowData[1]?.toString() || "-";
-        const pnr = rowData[2]?.toString() || "-";
-        const trips = parseInt(rowData[3]?.toString() || "0", 10);
-        const spend = parseFloat(rowData[4]?.toString() || "0");
-        const fareType = rowData[5]?.toString() || "N/A";
-        const statusStr = rowData[6]?.toString() || "Empty";
+        const passengerName = rowData[5]?.toString() || "-"; 
+        const pnr = rowData[0]?.toString() || "-";      
+        const trips = parseInt(rowData[3]?.toString() || "0", 10);  
+        const spend = parseFloat(rowData[4]?.toString() || "0");    
+        const fareType = rowData[6]?.toString() || "N/A";           
+        const statusStr = rowData[2]?.toString() || "Empty";        
         
         log(`✅ Extracted seat ${seatKey}: ${passengerName}, ${statusStr}`);
         
