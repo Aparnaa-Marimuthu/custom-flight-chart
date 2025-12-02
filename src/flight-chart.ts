@@ -735,15 +735,26 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
     const queryColumns: QueryColumn[] = [];
 
     cfg.dimensions.forEach(dim => {
-      // ThoughtSpot will fill dim.columns[] automatically
       dim.columns.forEach(col => {
         queryColumns.push(col);
       });
     });
 
-    // If nothing is dragged, return an empty query (TS handles it correctly)
+    // If user has dragged nothing → return placeholder column
     if (queryColumns.length === 0) {
-      return { queryColumns: [] };
+      const placeholder: QueryColumn = {
+        id: "placeholder",
+        name: "placeholder",
+        type: 2,           // ATTRIBUTE
+        dataType: 2,       // STRING
+        aggregationType: 0,
+        timeBucket: 0,
+        chartSpecificColumnType: 0,
+        columnProperties: {},
+        customOrder: [],
+      };
+
+      return { queryColumns: [placeholder] };
     }
 
     return { queryColumns };
@@ -753,52 +764,25 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
 /* ---------------------------------------------
    INIT
 ---------------------------------------------- */
-(async () => {
-  try {
-    await getChartContext({
-      getDefaultChartConfig: getFixedChartConfig,
-      getQueriesFromChartConfig: getFixedQueries,
-      renderChart,
+await getChartContext({
+  getDefaultChartConfig: getFixedChartConfig,
+  getQueriesFromChartConfig: getFixedQueries,
+  renderChart,
 
-      chartConfigEditorDefinition: [
-        {
-          key: "default",
-          label: "Flight Seat Configuration",
-          columnSections: [
-            {
-              key: "seat",
-              label: "Seat",
-              allowAttributeColumns: true,
-              maxColumnCount: 1,
-            },
-            {
-              key: "passenger_name",
-              label: "Passenger Name",
-              allowAttributeColumns: true,
-              maxColumnCount: 1,
-            },
-            {
-              key: "passenger_id",
-              label: "Passenger ID",
-              allowAttributeColumns: true,
-              maxColumnCount: 1,
-            },
-            {
-              key: "product_detail",
-              label: "Product Detail",
-              allowAttributeColumns: true,
-              maxColumnCount: 1,
-            },
-          ],
-        },
-      ],
-
-      visualPropEditorDefinition: {
-        elements: [], 
-      },
-    });
-
-  } catch (err) {
-    console.error(err);
+ chartConfigEditorDefinition: [
+  {
+    key: "main",
+    label: "Flight Seat Configuration",
+    columnSections: [
+      { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
+    ]
   }
-})();
+],
+  visualPropEditorDefinition: {
+    elements: [] // Leave empty unless you're adding properties
+  }
+});
+
