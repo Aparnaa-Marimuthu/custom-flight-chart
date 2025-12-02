@@ -8,9 +8,173 @@ import {
   type Query,
 } from "@thoughtspot/ts-chart-sdk";
 
-import flightSeatsSvg from "./assets/corrected_seats_hitbox.svg?raw";
+import flightSeatsSvg from "./assets/EJ_airbus.svg?raw";
 
-const log = (...msg: any[]) => console.log("[FLIGHT-CHART]", ...msg);
+// -------------------------------------------------------
+// INJECT YOUR CSS GLOBALLY (inside the TS iframe)
+// -------------------------------------------------------
+const STYLE = `
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+}
+
+/* --------------------------- */
+/* Your Provided CSS           */
+/* --------------------------- */
+
+.flight-seat-map-container {
+  font-family: sans-serif;
+  text-align: center;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+
+.svg-container {
+  width: 80%;
+  max-width: 1000px;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.flight-svg {
+  width: 100%;
+  height: auto;
+}
+
+.seat-default {
+  fill: #f0f0f0;
+  stroke: #aaa;
+  stroke-width: 1px;
+}
+
+.seat-occupied {
+  fill: #4da6ff;
+  stroke: #336699;
+  stroke-width: 1px;
+  cursor: pointer;
+}
+
+.seat-frequent-traveller {
+  fill: #ff9933;
+  stroke: #cc6600;
+  stroke-width: 1px;
+  cursor: pointer;
+}
+
+.seat-occupied:hover,
+.seat-frequent-traveller:hover {
+  opacity: 0.7;
+}
+
+/* Tooltip */
+.tooltip {  
+  position: absolute;  
+  background: rgba(50, 50, 50, 0.85);  
+  color: white;  
+  padding: 12px 16px;  
+  border-radius: 8px;  
+  font-size: 13px;  
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;  
+  pointer-events: none;  
+  z-index: 1000;  
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);  
+  border: 1px solid rgb(17, 120, 238);  
+  backdrop-filter: blur(10px);  
+  max-width: 250px;  
+  white-space: normal;  
+  line-height: 1.4;  
+}
+
+.tooltip strong {  
+  display: block;  
+  font-size: 14px;  
+  margin-bottom: 8px;  
+  padding-bottom: 6px;  
+  border-bottom: 1px solid rgba(255,255,255,0.3);  
+}
+
+.tooltip-row {  
+  display: flex;  
+  justify-content: space-between;  
+  margin: 4px 0;  
+}
+
+.tooltip-label {  
+  font-weight: 600;  
+  opacity: 0.9;  
+}
+
+.tooltip-value {  
+  text-align: right;  
+}
+
+.zoom-controls {  
+  position: absolute;  
+  top: 5px;  
+  right: 5px;  
+  z-index: 100;  
+  display: flex;  
+  gap: 10px;  
+}  
+  
+.zoom-btn {  
+  background: rgba(175, 175, 175, 0.7);  
+  color: black;  
+  border: none;  
+  width: 36px;  
+  height: 36px;  
+  border-radius: 25%;  
+  cursor: pointer;  
+  font-size: 18px;  
+  display: flex;  
+  align-items: center;  
+  justify-content: center;  
+  transition: background 0.2s;  
+}  
+  
+.zoom-btn:hover {  
+  background: rgba(204, 204, 204, 0.9);  
+}  
+  
+.svg-wrapper {  
+  overflow: auto;  
+  width: 100%;  
+  height: calc(100vh - 60px);  
+  display: flex;  
+  justify-content: center;  
+  align-items: flex-start;  
+  padding-top: 60px;
+}  
+  
+.svg-container {  
+   transform-origin: center top; 
+  transition: transform 0.3s ease;  
+  min-height: 100%; 
+  width: auto;  
+  max-width: none; 
+}
+`;
+
+(function injectCSS() {
+  const tag = document.createElement("style");
+  tag.innerHTML = STYLE;
+  document.head.appendChild(tag);
+})();
+
+// -------------------------------------------------------
+// Your existing code continues
+// -------------------------------------------------------
 
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
@@ -38,9 +202,56 @@ const SEAT_DATA: Record<
   },
 };
 
-/* ---------------------------------------------
-   UTILS
----------------------------------------------- */
+let currentZoom = 1.7;  
+const MIN_ZOOM = 1;  
+const MAX_ZOOM = 5;  
+const ZOOM_STEP = 0.25;  
+  
+function updateZoom(container: HTMLElement, delta: number) {  
+  currentZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + delta));  
+  const svgContainer = container.querySelector('.svg-container') as HTMLElement;  
+  if (svgContainer) {  
+    svgContainer.style.transform = `scale(${currentZoom})`;  
+  }  
+    
+  // Update button states  
+  const zoomInBtn = document.getElementById('zoom-in') as HTMLButtonElement;  
+  const zoomOutBtn = document.getElementById('zoom-out') as HTMLButtonElement;  
+  if (zoomInBtn) zoomInBtn.disabled = currentZoom >= MAX_ZOOM;  
+  if (zoomOutBtn) zoomOutBtn.disabled = currentZoom <= MIN_ZOOM;  
+}  
+  
+function createZoomControls(container: HTMLElement) {  
+  const controls = document.createElement('div');  
+  controls.className = 'zoom-controls';  
+    
+  const zoomInBtn = document.createElement('button');  
+  zoomInBtn.id = 'zoom-in';  
+  zoomInBtn.className = 'zoom-btn';  
+  zoomInBtn.innerHTML = '+';  
+  zoomInBtn.onclick = () => updateZoom(container, ZOOM_STEP);  
+    
+  const zoomOutBtn = document.createElement('button');  
+  zoomOutBtn.id = 'zoom-out';  
+  zoomOutBtn.className = 'zoom-btn';  
+  zoomOutBtn.innerHTML = '−';  
+  zoomOutBtn.onclick = () => updateZoom(container, -ZOOM_STEP);  
+    
+  const resetBtn = document.createElement('button');  
+  resetBtn.className = 'zoom-btn';  
+  resetBtn.innerHTML = '⟲';  
+  resetBtn.onclick = () => {  
+    currentZoom = 1;  
+    updateZoom(container, 0);  
+  };  
+    
+  controls.appendChild(zoomInBtn);  
+  controls.appendChild(zoomOutBtn);  
+  controls.appendChild(resetBtn);  
+    
+  return controls;  
+}
+
 function colorForStatus(status?: SeatStatus): string {
   return status === "Frequent Traveller" || status === "Occupied"
     ? "#d15d99"
@@ -54,12 +265,10 @@ function findSeatDom(container: HTMLElement, seatKey: string): Element | null {
     `g[id='seat_${seatKey}']`,
     `g[id='${seatKey}']`,
   ];
-
   for (const sel of selectors) {
     const el = container.querySelector(sel);
     if (el) return el;
   }
-
   return null;
 }
 
@@ -74,7 +283,6 @@ function resolveSeatKey(el: Element | null): string | null {
     }
     curr = curr.parentElement;
   }
-
   return null;
 }
 
@@ -85,17 +293,9 @@ function ensureTooltip(): HTMLDivElement {
   let tt = document.getElementById("seat-tooltip") as HTMLDivElement | null;
 
   if (!tt) {
-    log("Creating tooltip div...");
     tt = document.createElement("div");
     tt.id = "seat-tooltip";
-    tt.style.position = "fixed";
-    tt.style.pointerEvents = "none";
-    tt.style.zIndex = "99999";
-    tt.style.background = "rgba(0,0,0,0.75)";
-    tt.style.color = "#fff";
-    tt.style.padding = "6px 10px";
-    tt.style.borderRadius = "4px";
-    tt.style.fontSize = "12px";
+    tt.className = "tooltip";
     tt.style.display = "none";
     document.body.appendChild(tt);
   }
@@ -103,88 +303,246 @@ function ensureTooltip(): HTMLDivElement {
   return tt;
 }
 
-function showTooltip(html: string, x: number, y: number) {
-  const tt = ensureTooltip();
-  tt.innerHTML = html;
-  tt.style.left = x + 12 + "px";
-  tt.style.top = y + 12 + "px";
-  tt.style.display = "block";
-}
+function showTooltip(html: string, x: number, y: number) {  
+  const tt = ensureTooltip();  
+  tt.innerHTML = html;  
+  tt.style.left = x + 12 + "px";  
+  tt.style.top = y + 12 + "px";  
+  tt.style.display = "block";  
+}  
 
 function hideTooltip() {
   const tt = ensureTooltip();
   tt.style.display = "none";
 }
 
-/* ---------------------------------------------
-   LOAD + STYLE SVG
----------------------------------------------- */
-function loadAndStyleSVG(container: HTMLElement) {
-  log("Injecting SVG into container...", container);
+/* ---------- SVG PREP + HELPERS (CLEAN) ---------- */
+function safeGetAttr(el: Element | null, name: string) {
+  if (!el) return null;
+  return (
+    el.getAttribute(name) ??
+    el.getAttributeNS("http://www.w3.org/1999/xlink", name) ??
+    el.getAttributeNS("http://www.w3.org/2000/svg", name)
+  );
+}
 
+function safeSetXLink(el: Element, href: string) {
+  el.setAttribute("href", href);
+  el.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", href);
+}
+
+function prepareSvgMarkup(rawSvg: string) {
   try {
-    container.innerHTML = flightSeatsSvg;
-  } catch (err) {
-    log("FAILED to insert SVG:", err);
-  }
+    const rootNormalized = rawSvg
+      .replace(/<\s*ns\d+:svg\b/gi, "<svg")
+      .replace(/<\/\s*ns\d+:svg\s*>/gi, "</svg>");
 
-  log("SVG injected. Now coloring seats...");
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rootNormalized, "image/svg+xml");
+    const svg = doc.documentElement;
 
-  Object.keys(SEAT_DATA).forEach((seatKey) => {
-    const dom = findSeatDom(container, seatKey);
-
-    if (!dom) {
-      log(`Seat NOT found in SVG: ${seatKey}`);
-      return;
+    if (!svg || svg.nodeName.toLowerCase() !== "svg") {
+      return rawSvg;
     }
 
-    log(`Coloring seat`, seatKey);
+    const defs = svg.querySelector("defs");
+    if (defs && svg.firstElementChild !== defs) {
+      svg.removeChild(defs);
+      svg.insertBefore(defs, svg.firstElementChild || null);
+    }
+
+    const images = svg.querySelectorAll("image");
+    images.forEach((img) => {
+      const href = safeGetAttr(img, "href") ?? "";
+      if (!href) return;
+      const cleaned = href.replace(/[\r\n]+/g, "");
+      safeSetXLink(img, cleaned);
+      if (!img.getAttribute("preserveAspectRatio")) {
+        img.setAttribute("preserveAspectRatio", "none");
+      }
+    });
+
+    const patterns = svg.querySelectorAll("pattern");
+    const svgEl = svg as unknown as SVGSVGElement;
+    const vb = svgEl.viewBox?.baseVal;
+
+    const svgWidth =
+      parseFloat(svgEl.getAttribute("width") || "") || (vb ? vb.width : 0);
+
+    const svgHeight =
+      parseFloat(svgEl.getAttribute("height") || "") || (vb ? vb.height : 0);
+
+    patterns.forEach((p) => {
+      p.setAttribute("patternUnits", "userSpaceOnUse");
+      p.removeAttribute("patternContentUnits");
+      if (svgWidth && svgHeight) {
+        p.setAttribute("width", String(svgWidth));
+        p.setAttribute("height", String(svgHeight));
+      }
+
+      const use = p.querySelector("use");
+      if (use) {
+        const useHref =
+          use.getAttribute("href") ??
+          use.getAttributeNS("http://www.w3.org/1999/xlink", "href") ??
+          use.getAttribute("ns1:href");
+
+        if (useHref) {
+          safeSetXLink(use, useHref);
+        }
+
+        const tr = use.getAttribute("transform");
+        if (tr && /scale\(\s*0\.00/.test(tr)) {
+          use.removeAttribute("transform");
+        }
+      }
+    });
+
+    const clipPaths = svg.querySelectorAll("clipPath");
+    let mainClipId: string | null = null;
+    if (clipPaths.length) {
+      mainClipId = clipPaths[0].id || clipPaths[0].getAttribute("id");
+    }
+
+    const bgRects = Array.from(svg.querySelectorAll("rect")).filter((r) => {
+      const f = r.getAttribute("fill") || "";
+      return /url\(#pattern/i.test(f);
+    });
+
+    bgRects.forEach((r) => {
+      if (r.closest("defs")) {
+        r.parentElement?.removeChild(r);
+      }
+    });
+
+    let targetGroup: Element | null = null;
+    if (mainClipId) {
+      targetGroup = svg.querySelector(
+        `g[clip-path="url(#${mainClipId})"], g[clip-path='url(#${mainClipId})']`
+      );
+    }
+    if (!targetGroup) {
+      targetGroup = svg.querySelector("g") ?? svg;
+    }
+
+    const hasBg = Array.from(targetGroup.children).some((c) => {
+      return (
+        c.nodeName === "rect" &&
+        /url\(#pattern/i.test((c as HTMLElement).getAttribute("fill") || "")
+      );
+    });
+
+    if (!hasBg) {
+      const firstPattern = svg.querySelector("pattern");
+      if (firstPattern) {
+        const patId = firstPattern.getAttribute("id");
+        const bg = doc.createElementNS("http://www.w3.org/2000/svg", "rect");
+
+        bg.setAttribute("width", svg.getAttribute("width") ?? String(svgWidth));
+        bg.setAttribute("height", svg.getAttribute("height") ?? String(svgHeight));
+        bg.setAttribute("fill", `url(#${patId})`);
+
+        if (mainClipId) {
+          targetGroup.setAttribute("clip-path", `url(#${mainClipId})`);
+        }
+
+        targetGroup.insertBefore(bg, targetGroup.firstChild);
+      }
+    }
+
+    const serializer = new XMLSerializer();
+    return serializer.serializeToString(doc);
+  } catch {
+    return rawSvg;
+  }
+}
+
+/* ---------- LOAD + STYLE SVG (CLEAN) ---------- */
+async function loadAndStyleSVG(container: HTMLElement) {
+  const mapWrapper = document.createElement("div");
+  mapWrapper.className = "flight-seat-map-container";
+  mapWrapper.style.position = "relative";
+
+  mapWrapper.appendChild(createZoomControls(container));
+
+  const svgWrapper = document.createElement("div");
+  svgWrapper.className = "svg-wrapper";
+
+  const svgBox = document.createElement("div");
+  svgBox.className = "svg-container";
+
+  const prepared = prepareSvgMarkup(flightSeatsSvg as string);
+
+  svgBox.innerHTML = prepared;
+  svgWrapper.appendChild(svgBox);
+  mapWrapper.appendChild(svgWrapper);
+  container.appendChild(mapWrapper);
+  updateZoom(container, 0);
+
+  const svgElement = svgBox.querySelector("svg") as SVGElement | null;
+  if (svgElement) {
+    svgElement.style.width = "100%";
+    svgElement.style.height = "auto";
+    svgElement.style.maxWidth = "150";
+  }
+
+  const svgRoot = svgBox;
+  Object.keys(SEAT_DATA).forEach((seatKey) => {
+    const dom = findSeatDom(svgRoot, seatKey);
+    if (!dom) return;
 
     const fill = colorForStatus(SEAT_DATA[seatKey].status);
-
     const parts = dom.querySelectorAll("path, rect, circle, polygon, ellipse");
-
-    parts.forEach((p) => p.setAttribute("fill", fill));
-
-    (dom as HTMLElement).style.cursor = "pointer";
+    parts.forEach((p) => {
+      try {
+        p.setAttribute("fill", fill);
+      } catch {}
+    });
   });
 }
 
 /* ---------------------------------------------
    INTERACTIVITY
 ---------------------------------------------- */
-function attachInteractivity(container: HTMLElement) {
-  log("Attaching interactivity...");
+function attachInteractivity(container: HTMLElement) {  
+  container.addEventListener("mouseover", (ev: MouseEvent) => {  
+    const seatKey = resolveSeatKey(ev.target as Element);  
+    if (!seatKey) return;  
+  
+    const info = SEAT_DATA[seatKey];  
+      
+    // Status-based tooltip styling  
+    const statusColor = 
+      info.status === "Frequent Traveller" ? "#ff9933" :   
+      info.status === "Occupied" ? "#4da6ff" : 
+      "#ffffff";
 
-  container.addEventListener("mouseover", (ev: MouseEvent) => {
-    const seatKey = resolveSeatKey(ev.target as Element);
-    if (!seatKey) return;
-
-    log("Hovering over seat:", seatKey);
-
-    const seatDom = findSeatDom(container, seatKey);
-    if (!seatDom) return;
-
-    seatDom.querySelectorAll("path, rect, circle").forEach((p) => {
-      p.setAttribute("stroke", "#222");
-      p.setAttribute("stroke-width", "0");
-    });
-
-    const info = SEAT_DATA[seatKey];
     showTooltip(
       `
       <strong>Seat No: ${seatKey}</strong>
-
-      Frequent Traveller ID: ${info.travellerId}
-
-      Passenger: ${info.name}
-
-      Most Purchased Items: ${info.item}
+      <div class="tooltip-row">
+        <span class="tooltip-label">Status:</span>
+        <span class="tooltip-value" style="color:${statusColor}; font-weight:600;">
+          ${info.status}
+        </span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Passenger Name:</span>
+        <span class="tooltip-value">${info.name}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Frequent Traveller ID:</span>
+        <span class="tooltip-value">${info.travellerId}</span>
+      </div>
+      <div class="tooltip-row">
+        <span class="tooltip-label">Most Purchased Item:</span>
+        <span class="tooltip-value">${info.item}</span>
+      </div>
       `,
       ev.clientX,
       ev.clientY
     );
-  });
+  });  
 
   container.addEventListener("mousemove", (ev) => {
     const tt = document.getElementById("seat-tooltip");
@@ -203,30 +561,22 @@ function attachInteractivity(container: HTMLElement) {
    RENDER
 ---------------------------------------------- */
 async function renderChart(ctx: CustomChartContext) {
-  log("renderChart() called");
   ctx.emitEvent(ChartToTSEvent.RenderStart);
 
   const root =
     document.getElementById("flight-chart") ||
     (() => {
-      log("flight-chart div not found; creating one.");
       const div = document.createElement("div");
       div.id = "flight-chart";
-      div.style.width = "100%";
-      div.style.height = "100%";
-      div.style.overflow = "auto";
       document.body.appendChild(div);
       return div;
     })();
-
-  log("Root container found:", root);
 
   root.innerHTML = "";
 
   loadAndStyleSVG(root);
   attachInteractivity(root);
 
-  log("Rendering complete. Emitting RenderComplete...");
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
 }
 
@@ -234,38 +584,22 @@ async function renderChart(ctx: CustomChartContext) {
    FIXED CONFIG
 ---------------------------------------------- */
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("Building chart config. Columns:", chartModel.columns);
-
   const cols = chartModel.columns || [];
   const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
   const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
-
-  log("Attributes:", attributes);
-  log("Measures:", measures);
-
-  const seatCols = attributes.length ? [attributes[0]] : [];
-  const valueCols = measures.length ? [measures[0]] : [];
 
   return [
     {
       key: "main",
       dimensions: [
-        {
-          key: "seat",
-          columns: seatCols,
-        },
-        {
-          key: "value",
-          columns: valueCols,
-        },
+        { key: "seat", columns: attributes.length ? [attributes[0]] : [] },
+        { key: "value", columns: measures.length ? [measures[0]] : [] },
       ],
     },
   ];
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
-  log("Extracting queries from config:", configs);
-
   return configs.map((cfg) => ({
     queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
   }));
@@ -275,23 +609,16 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
    INIT
 ---------------------------------------------- */
 (async () => {
-  log("Initializing ThoughtSpot Chart...");
-
   try {
     const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
-      // IMPORTANT: avoid TS form-builder blowing up on undefined
-      visualPropEditorDefinition: {
-        elements: [], // no custom settings UI
-      },
+      visualPropEditorDefinition: { elements: [] },
     });
 
-    log("Context received:", ctx);
     await renderChart(ctx);
   } catch (err) {
-    log("FATAL ERROR during init:", err);
+    console.error(err);
   }
 })();
- 
