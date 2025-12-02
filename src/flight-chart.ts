@@ -732,32 +732,23 @@ const getFixedChartConfig = (): ChartConfig[] => {
 ---------------------------------------------- */
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map(cfg => {
-     const cols = cfg.dimensions.flatMap((d) => d.columns || []);
+    const queryColumns: QueryColumn[] = [];
 
-    console.log("[Query columns generated]", cols);
+    cfg.dimensions.forEach(dim => {
+      // ThoughtSpot will fill dim.columns[] automatically
+      dim.columns.forEach(col => {
+        queryColumns.push(col);
+      });
+    });
 
-    if (cols.length === 0) {
-      const dummy: QueryColumn = {
-       id: "dummy",
-       name: "dummy",
-       type: 2,
-       dataType: 2,
-       aggregationType: 22,
-       timeBucket: 0,
-       chartSpecificColumnType: 0,
-       columnProperties: {},
-       customOrder: [],
-      };
-
-      return { queryColumns: [dummy] };
+    // If nothing is dragged, return an empty query (TS handles it correctly)
+    if (queryColumns.length === 0) {
+      return { queryColumns: [] };
     }
 
-    return { queryColumns: cols };
+    return { queryColumns };
   });
 };
-
-
-
 
 /* ---------------------------------------------
    INIT
@@ -768,6 +759,40 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
+
+      chartConfigEditorDefinition: [
+        {
+          key: "default",
+          label: "Flight Seat Configuration",
+          columnSections: [
+            {
+              key: "seat",
+              label: "Seat",
+              allowAttributeColumns: true,
+              maxColumnCount: 1,
+            },
+            {
+              key: "passenger_name",
+              label: "Passenger Name",
+              allowAttributeColumns: true,
+              maxColumnCount: 1,
+            },
+            {
+              key: "passenger_id",
+              label: "Passenger ID",
+              allowAttributeColumns: true,
+              maxColumnCount: 1,
+            },
+            {
+              key: "product_detail",
+              label: "Product Detail",
+              allowAttributeColumns: true,
+              maxColumnCount: 1,
+            },
+          ],
+        },
+      ],
+
       visualPropEditorDefinition: {
         elements: [], 
       },
