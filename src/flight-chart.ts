@@ -2,6 +2,7 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
+  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -10,6 +11,7 @@ import {
 import flightSeatsSvg from "./assets/A320N_repeated_multiline_tooltip.svg?raw";
 import seatJson from "./assets/easyjet_full_flight_180rows.json";
 
+const log = (...msg: any[]) => console.log("[FLIGHT-CHART]", ...msg);
 // -------------------------------------------------------
 // INJECT YOUR CSS GLOBALLY (inside the TS iframe)
 // -------------------------------------------------------
@@ -704,7 +706,15 @@ async function renderChart(ctx: CustomChartContext) {
 /* ---------------------------------------------
    FIXED CONFIG
 ---------------------------------------------- */
-const getFixedChartConfig = (_chartModel: ChartModel): ChartConfig[] => {
+const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
+
+  const cols = chartModel.columns || [];
+  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
+  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
+
+
+  const seatCols = attributes.length ? [attributes[0]] : [];
+  const valueCols = measures.length ? [measures[0]] : [];
 
   return [
     {
@@ -712,19 +722,11 @@ const getFixedChartConfig = (_chartModel: ChartModel): ChartConfig[] => {
       dimensions: [
         {
           key: "seat",
-          columns: [],
+          columns: seatCols,
         },
         {
-          key: "passenger_name",
-          columns: [],
-        },
-        {
-          key: "passenger_id",
-          columns: [],
-        },
-        {
-          key: "product_detail",
-          columns: [],
+          key: "value",
+          columns: valueCols,
         },
       ],
     },
@@ -732,6 +734,7 @@ const getFixedChartConfig = (_chartModel: ChartModel): ChartConfig[] => {
 };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
+
   return configs.map((cfg) => ({
     queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
   }));
@@ -741,15 +744,21 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
    INIT
 ---------------------------------------------- */
 (async () => {
+
   try {
-    await getChartContext({
+    const ctx = await getChartContext({
       getDefaultChartConfig: getFixedChartConfig,
       getQueriesFromChartConfig: getFixedQueries,
       renderChart,
-      visualPropEditorDefinition: { elements: [] },
+      // IMPORTANT: avoid TS form-builder blowing up on undefined
+      visualPropEditorDefinition: {
+        elements: [], // no custom settings UI
+      },
     });
 
+    await renderChart(ctx);
   } catch (err) {
-    console.error(err);
+    log("FATAL ERROR during init:", err);
   }
 })();
+ 
