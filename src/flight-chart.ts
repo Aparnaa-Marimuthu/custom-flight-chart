@@ -766,11 +766,11 @@ await getChartContext({
     key: "main",
     label: "Flight Seat Configuration",
     columnSections: [
-      { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
-      { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
-    ]
+        { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "passenger name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "passengerid", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "product detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
+      ]
   }
 ],
   visualPropEditorDefinition: {
