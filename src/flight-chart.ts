@@ -673,22 +673,6 @@ async function renderChart(ctx: CustomChartContext) {
 
   if (!queryResult || !queryResult.columns || !queryResult.data) {
   console.warn("BYOC has no real data. Using dummy dataset for preview.");
-
-  // queryResult = {
-  //   columns: [
-  //     { name: "Seat" },
-  //     { name: "Passenger Name" },
-  //     { name: "PassengerID" },
-  //     { name: "Product Detail" },
-  //   ],
-  //   data: [
-  //     ["17E", "John Doe", "EJ001", "Water"],
-  //     ["14C", "Jane Smith", "EJ002", "Snacks"],
-  //     ["17E", "John Doe", "EJ001", "Coffee"], 
-  //     ["18B", "Peter", "EJ003", "Tea"],
-  //     ["18B", "Peter", "EJ003", "Beer"],   
-  //   ]
-  // };
 }
   const dynamicSeatData = buildSeatData(queryResult);
 
@@ -740,22 +724,10 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       });
     });
 
-    // If user has dragged nothing → return placeholder column
-    if (queryColumns.length === 0) {
-      const placeholder: QueryColumn = {
-        id: "placeholder",
-        name: "placeholder",
-        type: 2,           // ATTRIBUTE
-        dataType: 2,       // STRING
-        aggregationType: 0,
-        timeBucket: 0,
-        chartSpecificColumnType: 0,
-        columnProperties: {},
-        customOrder: [],
-      };
 
-      return { queryColumns: [placeholder] };
-    }
+  if (queryColumns.length === 0) {
+    return { queryColumns: [] };   // NOTHING, not a fake column
+  }
 
     return { queryColumns };
   });
@@ -769,17 +741,20 @@ await getChartContext({
   getQueriesFromChartConfig: getFixedQueries,
   renderChart,
 
-  chartConfigEditorDefinition: [
-    {
-      key: "main",
-      label: "Flight Seat Configuration",
-      columnSections: [
-        { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
-      ]
-    }
-  ]
+ chartConfigEditorDefinition: [
+  {
+    key: "main",
+    label: "Flight Seat Configuration",
+    columnSections: [
+      { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "passenger_name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "passenger_id", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
+      { key: "product_detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
+    ]
+  }
+],
+  visualPropEditorDefinition: {
+    elements: [] // Leave empty unless you're adding properties
+  }
 });
 
