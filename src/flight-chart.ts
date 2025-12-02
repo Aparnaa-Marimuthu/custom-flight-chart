@@ -618,9 +618,10 @@ function buildSeatData(queryResult: any) {
   const columns = queryResult.columns.map((c: any) => c.name.toLowerCase());
 
   const seatIdx = columns.indexOf("seat");
-  const passengerIdx = columns.indexOf("passenger name");
+  const passengerIdx = columns.indexOf("passengername");
   const passengerIdIdx = columns.indexOf("passengerid");
-  const productIdx = columns.indexOf("product detail");
+  const productIdx = columns.indexOf("productdetail");
+
 
   if (seatIdx === -1) return {};
 
@@ -703,10 +704,10 @@ const getFixedChartConfig = (): ChartConfig[] => {
     {
       key: "main",
       dimensions: [
-        { key: "seat", columns: [] },
-        { key: "passenger name", columns: [] },
-        { key: "passengerid", columns: [] },
-        { key: "product detail", columns: [] },
+         { key: "seat", columns: [] },
+         { key: "passengerName", columns: [] },
+         { key: "passengerId", columns: [] },
+         { key: "productDetail", columns: [] },
       ],
     },
   ];
@@ -755,11 +756,11 @@ await getChartContext({
     key: "main",
     label: "Flight Seat Configuration",
     columnSections: [
-        { key: "seat", label: "Seat", allowAttributeColumns: true },
-        { key: "passenger name", label: "Passenger Name", allowAttributeColumns: true },
-        { key: "passengerid", label: "Passenger ID", allowAttributeColumns: true },
-        { key: "product detail", label: "Product Detail", allowAttributeColumns: true },
-      ]
+      { key: "seat", label: "Seat", allowAttributeColumns: true },
+      { key: "passengerName", label: "Passenger Name", allowAttributeColumns: true },
+      { key: "passengerId", label: "Passenger ID", allowAttributeColumns: true },
+      { key: "productDetail", label: "Product Detail", allowAttributeColumns: true },
+    ]
   }
 ],
   visualPropEditorDefinition: {
