@@ -755,10 +755,10 @@ await getChartContext({
     key: "main",
     label: "Flight Seat Configuration",
     columnSections: [
-        { key: "seat", label: "Seat", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "passenger name", label: "Passenger Name", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "passengerid", label: "Passenger ID", allowAttributeColumns: true, maxColumnCount: 1 },
-        { key: "product detail", label: "Product Detail", allowAttributeColumns: true, maxColumnCount: 1 },
+        { key: "seat", label: "Seat", allowAttributeColumns: true },
+        { key: "passenger name", label: "Passenger Name", allowAttributeColumns: true },
+        { key: "passengerid", label: "Passenger ID", allowAttributeColumns: true },
+        { key: "product detail", label: "Product Detail", allowAttributeColumns: true },
       ]
   }
 ],
