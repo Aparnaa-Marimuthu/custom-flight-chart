@@ -663,10 +663,6 @@ function buildSeatData(queryResult: any) {
   return seatMap;
 }
 
-
-
-
-
 /* ---------------------------------------------
    RENDER
 ---------------------------------------------- */
@@ -708,9 +704,9 @@ const getFixedChartConfig = (): ChartConfig[] => {
       key: "main",
       dimensions: [
         { key: "seat", columns: [] },
-        { key: "passenger_name", columns: [] },
-        { key: "passenger_id", columns: [] },
-        { key: "product_detail", columns: [] },
+        { key: "passenger name", columns: [] },
+        { key: "passengerid", columns: [] },
+        { key: "product detail", columns: [] },
       ],
     },
   ];
@@ -720,38 +716,31 @@ const getFixedChartConfig = (): ChartConfig[] => {
    FIXED QUERIES (TS FILLS COLUMNS AFTER USER DRAGS)
 ---------------------------------------------- */
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
+  console.log(" TS sent configs:", JSON.stringify(configs, null, 2));
+
   return configs.map(cfg => {
+    console.log(" Processing config:", JSON.stringify(cfg, null, 2));
+
     const queryColumns: QueryColumn[] = [];
 
-    // Collect all dragged columns
+    // collect user-dragged columns
     cfg.dimensions.forEach(dim => {
+      console.log("   Dimension:", dim.key, "Columns:", dim.columns);
       if (dim.columns && dim.columns.length > 0) {
         dim.columns.forEach(col => queryColumns.push(col));
       }
     });
 
-    // If user has not dragged anything, force one real column
+    // if nothing is dragged → this is the root failure
     if (queryColumns.length === 0) {
-      console.warn(" No fields selected — forcing first available column.");
-      
-      // Pick the first dimension
-      const firstDim = cfg.dimensions[0];
-
-      if (firstDim && firstDim.columns && firstDim.columns.length > 0) {
-        console.log(" Using first dimension’s first column:", firstDim.columns[0]);
-        return { queryColumns: [firstDim.columns[0]] };
-      }
-
-      // If ThoughtSpot hasn't injected any columns yet → fail gracefully
-      console.error(" No real columns available — ThoughtSpot can't run empty queries.");
+      console.error(" No real columns injected by ThoughtSpot!");
       return { queryColumns: [] };
     }
 
-    console.log(" Query columns:", queryColumns);
+    console.log(" Final queryColumns:", queryColumns);
     return { queryColumns };
   });
 };
-
 
 /* ---------------------------------------------
    INIT
