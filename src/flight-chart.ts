@@ -702,16 +702,35 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     // ✅ FIX #3: HELPER - GET DATA BY COLUMN NAME
     const getDataForColumn = (row: any, slotKey: string): any => {
-      const columnName = slotToColumnName[slotKey];
-      if (!columnName) {
-        return undefined;
-      }
+  const columnName = slotToColumnName[slotKey];
+  if (!columnName) {
+    return undefined;
+  }
 
-      // Handle both array and object row formats
+  // Handle both array and object row formats
       if (Array.isArray(row)) {
-        // ✅ Find index by matching column name in chartModel
-        const colIndex = chartModel.columns.findIndex((c: any) => c.name === columnName);
-        const value = colIndex >= 0 ? row[colIndex] : undefined;
+        // ✅ FIX: Find the column ID first, then its position in the data columns array
+        const columnInfo = chartModel.columns.find((c: any) => c.name === columnName);
+        if (!columnInfo) {
+          log(`❌ Column "${columnName}" not found in chartModel.columns`);
+          return undefined;
+        }
+        
+        // Find the index of this column ID in the data's column array
+        const colIndex = columns.findIndex((c: any) => c === columnInfo.id);
+        
+        if (colIndex < 0) {
+          log(`❌ Column ID "${columnInfo.id}" not found in data columns array`);
+          return undefined;
+        }
+        
+        const value = row[colIndex];
+        
+        // Debug log for first row only
+        if (row === actualData[0]) {
+          log(`🔍 Column "${columnName}" (id: ${columnInfo.id}) → index ${colIndex} → value: ${value}`);
+        }
+        
         return value;
       } else if (typeof row === "object") {
         return row[columnName];
