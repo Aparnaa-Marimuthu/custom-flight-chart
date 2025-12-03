@@ -583,7 +583,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 Reading data from ThoughtSpot context (slot‑driven only, no static fallback)");
+  log("📊 Reading data from ThoughtSpot context (slots only, no static fallback)");
 
   try {
     const chartModel = ctx.getChartModel();
@@ -615,9 +615,10 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
 
     // ----------------------------------------------------------------
-    // 1) Build slot → column index map ONLY for slots that are mapped
+    // 1) Build slot → column index map ONLY from slot mapping
     // ----------------------------------------------------------------
     const slotToColumnIndex: Record<string, number> = {};
+
     try {
       const modelAny = chartModel as any;
       const configAny = modelAny.config;
@@ -642,7 +643,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           }
         });
       } else {
-        log("⚠️ No dimensions in chart config (slots not configured?)");
+        log("⚠️ No dimensions in chart config (slots not configured yet?)");
       }
     } catch (e) {
       log("⚠️ Error while building slot mapping:", e);
@@ -651,12 +652,13 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     log("🔍 Final slot → column index mapping:", slotToColumnIndex);
 
     const hasSeatSlotMapped = typeof slotToColumnIndex["seat"] === "number";
+    const hasStatusSlotMapped = typeof slotToColumnIndex["status"] === "number";
+
     if (!hasSeatSlotMapped) {
+      // Important: do NOT create any seat data if the seat slot is not mapped.
       log("❌ Seat slot is not mapped. No seat data will be created.");
       return seatMap;
     }
-
-    const hasStatusSlotMapped = typeof slotToColumnIndex["status"] === "number";
 
     // Helper: get value for a logical slot key from a row
     const getValFromSlot = (rowData: any[], slotKey: string): string => {
@@ -711,14 +713,14 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
             status = undefined;
           }
         } else {
-          // Status slot not mapped → treat as no status for all seats
+          // Status slot NOT mapped → treat as no status info for any seat
           status = undefined;
         }
 
-        let fareType: string | undefined;
-        if (slotToColumnIndex["fare_type"] !== undefined) {
-          fareType = getValFromSlot(rowData, "fare_type") || undefined;
-        }
+        const fareType =
+          slotToColumnIndex["fare_type"] !== undefined
+            ? getValFromSlot(rowData, "fare_type") || undefined
+            : undefined;
 
         let trips: number | undefined;
         if (slotToColumnIndex["trips"] !== undefined) {
@@ -779,12 +781,8 @@ async function renderChart(ctx: CustomChartContext) {
   // ✅ USE THOUGHTSPOT DATA
   const dynamicSeatData = buildSeatDataFromContext(ctx);
 
-  if (Object.keys(dynamicSeatData).length === 0) {
-    log("⚠️ No seat data to render");
-    const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;'>No data available. Please configure the chart.</div>";
-    ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    return;
+   if (Object.keys(dynamicSeatData).length === 0) {
+    log("⚠️ No seat data to render from slots; rendering SVG with default grey seats.");
   }
 
   const root =
