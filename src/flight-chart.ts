@@ -658,78 +658,88 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     };
 
     // 2) Build seats using only mapped slots
-    for (let i = 0; i < actualData.length; i++) {
-      try {
-        const row = actualData[i];
-        if (!row) continue;
+    // 2) Build seats using only mapped slots
+for (let i = 0; i < actualData.length; i++) {
+  try {
+    const row = actualData[i];
+    if (!row) continue;
 
-        let rowData: any[];
-        if (Array.isArray(row)) {
-          rowData = row;
-        } else if (typeof row === "object") {
-          rowData = Object.values(row);
-        } else {
-          continue;
-        }
-
-        const seatKey = getValFromSlot(rowData, "seat").trim();
-        if (!seatKey) {
-          log(`⚠️ Row ${i} has no seat key (after mapping)`);
-          continue;
-        }
-
-        const passengerName =
-          slotToColumnIndex["passenger_name"] !== undefined
-            ? getValFromSlot(rowData, "passenger_name") || undefined
-            : undefined;
-
-        const pnr =
-          slotToColumnIndex["pnr"] !== undefined
-            ? getValFromSlot(rowData, "pnr") || undefined
-            : undefined;
-
-        let status: SeatStatus | undefined;
-        if (hasStatusSlotMapped) {
-          const statusStr = getValFromSlot(rowData, "status") || undefined;
-          if (statusStr === "Empty") status = "Empty";
-          else if (statusStr === "Repeated Customer") status = "Frequent Traveller";
-          else if (statusStr === "Occupied") status = "Occupied";
-          else status = undefined;
-        } else {
-          status = undefined;
-        }
-
-        const fareType =
-          slotToColumnIndex["fare_type"] !== undefined
-            ? getValFromSlot(rowData, "fare_type") || undefined
-            : undefined;
-
-        let trips: number | undefined;
-        if (slotToColumnIndex["trips"] !== undefined) {
-          const tripsStr = getValFromSlot(rowData, "trips");
-          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
-        }
-
-        let spend: number | undefined;
-        if (slotToColumnIndex["spend"] !== undefined) {
-          const spendStr = getValFromSlot(rowData, "spend");
-          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
-        }
-
-        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${status ?? "-"}`);
-
-        seatMap[seatKey] = {
-          name: passengerName,
-          travellerId: pnr,
-          trips,
-          spend,
-          item: fareType,
-          status,
-        };
-      } catch (rowError) {
-        log(`❌ Error processing row ${i}:`, rowError);
-      }
+    let rowData: any[];
+    if (Array.isArray(row)) {
+      rowData = row;
+    } else if (typeof row === "object") {
+      rowData = Object.values(row);
+    } else {
+      continue;
     }
+
+    // ✅ Seat key must come from the Seat column slot
+    const seatKey = getValFromSlot(rowData, "seat").trim(); 
+    if (!seatKey) {
+      log(`⚠️ Row ${i} has no seat key (Seat column empty after mapping)`);
+      continue;
+    }
+
+    if (!/^\d+[A-F]$/.test(seatKey)) {
+      log(`⚠️ Row ${i} seat "${seatKey}" does not match SVG seat id pattern`);
+      continue;
+    }
+
+    const passengerName =
+      slotToColumnIndex["passenger_name"] !== undefined
+        ? getValFromSlot(rowData, "passenger_name") || undefined
+        : undefined;
+
+    const pnr =
+      slotToColumnIndex["pnr"] !== undefined
+        ? getValFromSlot(rowData, "pnr") || undefined
+        : undefined;
+
+    let status: SeatStatus | undefined;
+    if (hasStatusSlotMapped) {
+      const statusStr = getValFromSlot(rowData, "status") || "";
+      const s = statusStr.trim().toLowerCase();
+      if (s === "empty") status = "Empty";
+      else if (s === "occupied") status = "Occupied";
+      else if (s.includes("repeated") || s.includes("frequent")) status = "Frequent Traveller";
+      else status = undefined;
+    } else {
+      status = undefined;
+      
+    }
+
+    const fareType =
+      slotToColumnIndex["fare_type"] !== undefined
+        ? getValFromSlot(rowData, "fare_type") || undefined
+        : undefined;
+
+    let trips: number | undefined;
+    if (slotToColumnIndex["trips"] !== undefined) {
+      const tripsStr = getValFromSlot(rowData, "trips");
+      trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+    }
+
+    let spend: number | undefined;
+    if (slotToColumnIndex["spend"] !== undefined) {
+      const spendStr = getValFromSlot(rowData, "spend");
+      spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+    }
+
+    log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${status ?? "-"}`);
+
+    seatMap[seatKey] = {
+      name: passengerName,
+      travellerId: pnr,
+      trips,
+      spend,
+      item: fareType,
+      status,
+    };
+  } catch (rowError) {
+    log(`❌ Error processing row ${i}:`, rowError);
+  }
+}
+
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
     return seatMap;
