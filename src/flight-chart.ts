@@ -2,6 +2,7 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
+  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -172,7 +173,6 @@ body, html {
 // -------------------------------------------------------
 // TYPES
 // -------------------------------------------------------
-let latestChartConfig: ChartConfig[] | undefined;
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
 
 // -------------------------------------------------------
@@ -583,7 +583,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 Reading data from ThoughtSpot context (slots only, using cached config)");
+  log("📊 Reading data from ThoughtSpot context (slot‑driven + static fallback)");
 
   try {
     const chartModel = ctx.getChartModel();
@@ -599,7 +599,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     const queryData = chartModel.data[0] as any;
     const dataPoints = queryData.data;
-    const columns = chartModel.columns || [];
+    const columns = queryData.columns || [];
 
     if (!dataPoints) {
       log("⚠️ No data points");
@@ -614,133 +614,157 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
 
-    // 1) Use latestChartConfig (from configurator) to build slot → column index
+    // ---------------------------------------------------
+    // 1) Try to build slot → column index map from config
+    // ---------------------------------------------------
     const slotToColumnIndex: Record<string, number> = {};
-    const cfgArray = latestChartConfig;
-    const cfg = Array.isArray(cfgArray) ? cfgArray[0] : undefined;
+    try {
+      const modelAny = chartModel as any;
+      const configAny = modelAny.config;
+      const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
 
-    if (cfg?.dimensions) {
-      cfg.dimensions.forEach((dim: any) => {
-        if (!dim.key || !dim.columns || !dim.columns.length) {
-          log(`ℹ️ Slot "${dim.key}" has no mapped columns, ignoring`);
-          return;
-        }
-        const colId = dim.columns[0].id;
-        const colIndex = columns.findIndex((c: any) => c.id === colId);
-        if (colIndex >= 0) {
-          slotToColumnIndex[dim.key] = colIndex;
-          log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
-        } else {
-          log(
-            `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
-          );
-        }
-      });
-    } else {
-      log("⚠️ latestChartConfig is not set or has no dimensions yet");
+      if (cfg?.dimensions) {
+        cfg.dimensions.forEach((dim: any) => {
+          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          const colId = dim.columns[0].id;
+          const colIndex = columns.findIndex((c: any) => c.id === colId);
+          if (colIndex >= 0) {
+            slotToColumnIndex[dim.key] = colIndex;
+            log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
+          } else {
+            log(
+              `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
+            );
+          }
+        });
+      } else {
+        log("⚠️ No dimensions in chart config (slots not configured?)");
+      }
+    } catch (e) {
+      log("⚠️ Error while building slot mapping, will fall back to static indexes:", e);
     }
 
     log("🔍 Final slot → column index mapping:", slotToColumnIndex);
 
     const hasSeatSlotMapped = typeof slotToColumnIndex["seat"] === "number";
-    const hasStatusSlotMapped = typeof slotToColumnIndex["status"] === "number";
 
-    if (!hasSeatSlotMapped) {
-      log("❌ Seat slot is not mapped. No seat data will be created.");
-      return seatMap;
-    }
-
+    // Helper: get value for a logical slot key from a row
     const getValFromSlot = (rowData: any[], slotKey: string): string => {
       const idx = slotToColumnIndex[slotKey];
       if (idx === undefined || rowData[idx] === undefined) return "";
       return rowData[idx]?.toString() || "";
     };
 
-    // 2) Build seats using only mapped slots
-    // 2) Build seats using only mapped slots
-for (let i = 0; i < actualData.length; i++) {
-  try {
-    const row = actualData[i];
-    if (!row) continue;
+    // ---------------------------------------------------
+    // 2) Iterate rows
+    //    If slot mapping works, use it.
+    //    Otherwise, fall back to known static indexes.
+    // ---------------------------------------------------
+    for (let i = 0; i < actualData.length; i++) {
+      try {
+        const row = actualData[i];
+        if (!row) continue;
 
-    let rowData: any[];
-    if (Array.isArray(row)) {
-      rowData = row;
-    } else if (typeof row === "object") {
-      rowData = Object.values(row);
-    } else {
-      continue;
+        let rowData: any[];
+        if (Array.isArray(row)) {
+          rowData = row;
+        } else if (typeof row === "object") {
+          rowData = Object.values(row);
+        } else {
+          continue;
+        }
+
+        let seatKey = "";
+        let passengerName: string | undefined;
+        let pnr: string | undefined;
+        let statusStr: string | undefined;
+        let fareType: string | undefined;
+        let trips: number | undefined;
+        let spend: number | undefined;
+
+        if (hasSeatSlotMapped) {
+          // Preferred: use slot mapping, but only if slot exists
+          seatKey = getValFromSlot(rowData, "seat").trim();
+          passengerName = slotToColumnIndex["passenger_name"] !== undefined
+            ? getValFromSlot(rowData, "passenger_name") || undefined
+            : undefined;
+          pnr = slotToColumnIndex["pnr"] !== undefined
+            ? getValFromSlot(rowData, "pnr") || undefined
+            : undefined;
+          statusStr = slotToColumnIndex["status"] !== undefined
+            ? getValFromSlot(rowData, "status") || undefined
+            : undefined;
+          fareType = slotToColumnIndex["fare_type"] !== undefined
+            ? getValFromSlot(rowData, "fare_type") || undefined
+            : undefined;
+          if (slotToColumnIndex["trips"] !== undefined) {
+            const tripsStr = getValFromSlot(rowData, "trips");
+            trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          }
+          if (slotToColumnIndex["spend"] !== undefined) {
+            const spendStr = getValFromSlot(rowData, "spend");
+            spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          }
+        } else {
+          // Fallback: static index mapping (your original)
+          log("⚠️ Seat slot not mapped via config, using static index mapping for this row");
+          seatKey = rowData[1]?.toString().trim() || "";
+          passengerName = rowData[5]?.toString() || undefined;
+          pnr = rowData[0]?.toString() || undefined;
+          const tripsStr = rowData[3]?.toString() || "";
+          const spendStr = rowData[4]?.toString() || "";
+          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          fareType = rowData[6]?.toString() || undefined;
+          statusStr = rowData[2]?.toString() || undefined;
+        }
+
+        if (!seatKey) {
+          log(`⚠️ Row ${i} has no seat key (after mapping)`);
+          continue;
+        }
+
+        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${statusStr ?? "-"}`);
+
+        let status: SeatStatus | undefined;
+        if (statusStr === "Empty") {
+          status = "Empty";
+        } else if (statusStr === "Repeated Customer") {
+          status = "Frequent Traveller";
+        } else if (statusStr === "Occupied") {
+          status = "Occupied";
+        } else {
+          status = undefined; // no status slot or unknown value
+        }
+
+        seatMap[seatKey] = {
+          name: passengerName,
+          travellerId: pnr,
+          trips,
+          spend,
+          item: fareType,
+          status, // may be undefined if Status slot not mapped
+        };
+
+      } catch (rowError) {
+        log(`❌ Error processing row ${i}:`, rowError);
+      }
     }
-
-    // ✅ Seat key must come from the Seat column slot
-    const seatKey = getValFromSlot(rowData, "seat").trim(); 
-    if (!seatKey) {
-      log(`⚠️ Row ${i} has no seat key (Seat column empty after mapping)`);
-      continue;
-    }
-
-    if (!/^\d+[A-F]$/.test(seatKey)) {
-      log(`⚠️ Row ${i} seat "${seatKey}" does not match SVG seat id pattern`);
-      continue;
-    }
-
-    const passengerName =
-      slotToColumnIndex["passenger_name"] !== undefined
-        ? getValFromSlot(rowData, "passenger_name") || undefined
-        : undefined;
-
-    const pnr =
-      slotToColumnIndex["pnr"] !== undefined
-        ? getValFromSlot(rowData, "pnr") || undefined
-        : undefined;
-
-    let status: SeatStatus | undefined;
-    if (hasStatusSlotMapped) {
-      const statusStr = getValFromSlot(rowData, "status") || "";
-      const s = statusStr.trim().toLowerCase();
-      if (s === "empty") status = "Empty";
-      else if (s === "occupied") status = "Occupied";
-      else if (s.includes("repeated") || s.includes("frequent")) status = "Frequent Traveller";
-      else status = undefined;
-    } else {
-      status = undefined;
-      
-    }
-
-    const fareType =
-      slotToColumnIndex["fare_type"] !== undefined
-        ? getValFromSlot(rowData, "fare_type") || undefined
-        : undefined;
-
-    let trips: number | undefined;
-    if (slotToColumnIndex["trips"] !== undefined) {
-      const tripsStr = getValFromSlot(rowData, "trips");
-      trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
-    }
-
-    let spend: number | undefined;
-    if (slotToColumnIndex["spend"] !== undefined) {
-      const spendStr = getValFromSlot(rowData, "spend");
-      spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
-    }
-
-    log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${status ?? "-"}`);
-
-    seatMap[seatKey] = {
-      name: passengerName,
-      travellerId: pnr,
-      trips,
-      spend,
-      item: fareType,
-      status,
-    };
-  } catch (rowError) {
-    log(`❌ Error processing row ${i}:`, rowError);
-  }
-}
-
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
+
+    if (Object.keys(seatMap).length > 0) {
+      const sampleSeats = Object.keys(seatMap).slice(0, 3);
+      log(
+        "📌 Sample seats:",
+        sampleSeats.map(
+          (k) => `${k}: ${seatMap[k].name} (${seatMap[k].status})`
+        )
+      );
+    } else {
+      log("⚠️ No seats were processed - check Seat slot / SVG ids");
+    }
+
     return seatMap;
   } catch (error) {
     log("❌ Error reading data from context:", error);
@@ -760,8 +784,12 @@ async function renderChart(ctx: CustomChartContext) {
   // ✅ USE THOUGHTSPOT DATA
   const dynamicSeatData = buildSeatDataFromContext(ctx);
 
-   if (Object.keys(dynamicSeatData).length === 0) {
-    log("⚠️ No seat data to render from slots; rendering SVG with default grey seats.");
+  if (Object.keys(dynamicSeatData).length === 0) {
+    log("⚠️ No seat data to render");
+    const root = document.getElementById("flight-chart") || document.body;
+    root.innerHTML = "<div style='padding:20px;text-align:center;'>No data available. Please configure the chart.</div>";
+    ctx.emitEvent(ChartToTSEvent.RenderComplete);
+    return;
   }
 
   const root =
@@ -786,48 +814,46 @@ async function renderChart(ctx: CustomChartContext) {
 // CHART CONFIG - WITH PROPER COLUMN MAPPING
 // -------------------------------------------------------
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("📋 Building chart config from model (by column name)");
+  log("📋 Building chart config from model");
 
   const cols = chartModel.columns || [];
+  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
+  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
 
-  // Helper to find a column by name (case-insensitive)
-  const findCol = (names: string[]) => {
-    const lowerNames = names.map((n) => n.toLowerCase());
-    return cols.find((c: any) =>
-      lowerNames.includes((c.name || c.columnName || "").toLowerCase())
-    );
-  };
-
-  // Map each slot to the correct worksheet column by name
-  const seatCol          = findCol(["Seat", "Seat Number"]);
-  const passengerNameCol = findCol(["Passenger Name", "Passenger_Name", "Name"]);
-  const pnrCol           = findCol(["Pnr", "PNR", "Booking Ref", "Booking Reference"]);
-  const tripsCol         = findCol(["Total No Of Travel", "Trips", "Number of Trips"]);
-  const spendCol         = findCol(["Total Amount Spent", "Total Spend", "Spend"]);
-  const fareTypeCol      = findCol(["Fare Type", "Fare"]);
-  const statusCol        = findCol(["Status"]);
-
-  log("🔗 Slot to column by name:", {
-    seat: seatCol?.name,
-    passenger_name: passengerNameCol?.name,
-    pnr: pnrCol?.name,
-    trips: tripsCol?.name,
-    spend: spendCol?.name,
-    fare_type: fareTypeCol?.name,
-    status: statusCol?.name,
-  });
+  log(`Found ${attributes.length} attributes and ${measures.length} measures`);
 
   return [
     {
       key: "main",
       dimensions: [
-        { key: "seat",           columns: seatCol          ? [seatCol]          : [] },
-        { key: "passenger_name", columns: passengerNameCol ? [passengerNameCol] : [] },
-        { key: "pnr",            columns: pnrCol           ? [pnrCol]           : [] },
-        { key: "trips",          columns: tripsCol         ? [tripsCol]         : [] },
-        { key: "spend",          columns: spendCol         ? [spendCol]         : [] },
-        { key: "fare_type",      columns: fareTypeCol      ? [fareTypeCol]      : [] },
-        { key: "status",         columns: statusCol        ? [statusCol]        : [] },
+        { 
+          key: "seat", 
+          columns: attributes.length > 0 ? [attributes[0]] : [] 
+        },
+        { 
+          key: "passenger_name", 
+          columns: attributes.length > 1 ? [attributes[1]] : [] 
+        },
+        { 
+          key: "pnr", 
+          columns: attributes.length > 2 ? [attributes[2]] : [] 
+        },
+        { 
+          key: "trips", 
+          columns: measures.length > 0 ? [measures[0]] : [] 
+        },
+        { 
+          key: "spend", 
+          columns: measures.length > 1 ? [measures[1]] : [] 
+        },
+        { 
+          key: "fare_type", 
+          columns: attributes.length > 3 ? [attributes[3]] : [] 
+        },
+        { 
+          key: "status", 
+          columns: attributes.length > 4 ? [attributes[4]] : [] 
+        },
       ],
     },
   ];
@@ -853,93 +879,67 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       visualPropEditorDefinition: {
         elements: [],
       },
-
-      // IMPORTANT: make chartConfigEditorDefinition a FUNCTION
-      chartConfigEditorDefinition: (
-        currentChartModel: ChartModel,
-        _customCtx: CustomChartContext
-      ) => {
-        const { config } = currentChartModel;
-        const cfgArray = (config as any)?.chartConfig ?? config;
-        latestChartConfig = Array.isArray(cfgArray) ? cfgArray : undefined;
-        log("📋 chartConfigEditorDefinition called, caching latestChartConfig");
-
-        return [
-          {
-            key: "column",
-            label: "Flight Seat Data Configuration",
-            descriptionText:
-              "Configure seat map data columns from your worksheet",
-            columnSections: [
-              {
-                key: "seat",
-                label: "Seat Number",
-                allowAttributeColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "passenger_name",
-                label: "Passenger Name",
-                allowAttributeColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "pnr",
-                label: "PNR / Booking Reference",
-                allowAttributeColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "trips",
-                label: "Number of Trips",
-                allowMeasureColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "spend",
-                label: "Total Spend",
-                allowMeasureColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "fare_type",
-                label: "Fare Type",
-                allowAttributeColumns: true,
-                maxColumnCount: 1,
-              },
-              {
-                key: "status",
-                label: "Status (Occupied/Empty/Repeated)",
-                allowAttributeColumns: true,
-                maxColumnCount: 1,
-              },
-            ],
-          },
-        ];
-      },
-
-      // Optional: validateConfig if you want
-      validateConfig: (chartConfig: ChartConfig[], _chartModel: ChartModel) => {
-        // Example: require seat slot to be filled
-        const main = chartConfig[0];
-        const seatDim = main?.dimensions?.find((d) => d.key === "seat");
-        if (!seatDim || !seatDim.columns || seatDim.columns.length === 0) {
-          return {
-            isValid: false,
-            errorMessages: ["Please map Seat Number in the configurator."],
-          };
+      chartConfigEditorDefinition: [
+        {
+          key: "column",
+          label: "Flight Seat Data Configuration",
+          descriptionText: "Configure seat map data columns from your worksheet",
+          columnSections: [
+            { 
+              key: "seat", 
+              label: "Seat Number", 
+              allowAttributeColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "passenger_name", 
+              label: "Passenger Name", 
+              allowAttributeColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "pnr", 
+              label: "PNR / Booking Reference", 
+              allowAttributeColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "trips", 
+              label: "Number of Trips", 
+              allowMeasureColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "spend", 
+              label: "Total Spend", 
+              allowMeasureColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "fare_type", 
+              label: "Fare Type", 
+              allowAttributeColumns: true, 
+              maxColumnCount: 1,
+            },
+            { 
+              key: "status", 
+              label: "Status (Occupied/Empty/Repeated)", 
+              allowAttributeColumns: true, 
+              maxColumnCount: 1,
+            },
+          ]
         }
-        return { isValid: true, errorMessages: [] };
-      },
+      ]
     });
 
     log("✅ Context created successfully");
-
-    // your existing polling logic is fine
+    
+    // ✅ CRITICAL FIX: Poll for data and render when available
     const checkAndRender = async () => {
       try {
         const chartModel = ctx.getChartModel();
         const hasData = chartModel?.data?.[0]?.data;
+        
         if (hasData) {
           log("✅ Data is available, rendering chart...");
           await renderChart(ctx);
@@ -954,15 +954,22 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
       }
     };
 
+    // Try immediate render
     const rendered = await checkAndRender();
+    
     if (!rendered) {
       log("⏳ Waiting for data... will retry...");
+      
+      // Poll every 2 seconds for up to 30 seconds
       let attempts = 0;
       const maxAttempts = 15;
+      
       const pollInterval = setInterval(async () => {
         attempts++;
         log(`🔄 Attempt ${attempts}/${maxAttempts} to check for data...`);
+        
         const success = await checkAndRender();
+        
         if (success || attempts >= maxAttempts) {
           clearInterval(pollInterval);
           if (!success) {
@@ -971,10 +978,10 @@ const getFixedQueries = (configs: ChartConfig[]): Query[] => {
         }
       }, 2000);
     }
+    
   } catch (err) {
     log("❌ FATAL ERROR during init:", err);
   }
 })();
-
 
 
