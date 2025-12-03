@@ -2,7 +2,6 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
-  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -870,95 +869,76 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("📋 getDefaultChartConfig called");
   log("📊 Available columns:", chartModel.columns);
 
-  const cols = chartModel.columns || [];
-  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
-  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
-
-  log(`✅ Found ${attributes.length} attributes and ${measures.length} measures`);
-  log("🔵 Attributes:", attributes.map(a => a.name));
-  log("🟢 Measures:", measures.map(m => m.name));
-
-  // ✅ AUTO-DETECT COLUMNS BY NAME PATTERNS (like reference code)
-  const findColumn = (keys: string[], list: any[]) => {
-    const found = list.find(col => 
-      keys.some(key => col.name.toLowerCase().includes(key.toLowerCase()))
-    );
-    if (found) {
-      log(`🔍 Auto-detected column for keys [${keys.join(", ")}]: "${found.name}"`);
-    }
-    return found;
-  };
-
-  // Try to find columns by common name patterns
-  const seatCol = findColumn(["seat", "seatnumber", "seat_number", "seat number"], attributes);
-  const nameCol = findColumn(["passenger", "name", "passenger_name", "passenger name"], attributes);
-  const pnrCol = findColumn(["pnr", "booking", "reference"], attributes);
-  const statusCol = findColumn(["status", "state"], attributes);
-  const fareCol = findColumn(["fare", "type", "fare_type", "fare type"], attributes);
-  
-  // For measures, look for trip/count and spend/amount patterns
-  const tripsCol = findColumn(["trip", "trips", "travel", "count", "no of travel"], measures);
-  const spendCol = findColumn(["spend", "spent", "amount", "amont", "amont spent"], measures);
-
-  log("✅ Auto-detection results:");
-  log(`  Seat: ${seatCol?.name || "not found"}`);
-  log(`  Passenger Name: ${nameCol?.name || "not found"}`);
-  log(`  PNR: ${pnrCol?.name || "not found"}`);
-  log(`  Status: ${statusCol?.name || "not found"}`);
-  log(`  Fare Type: ${fareCol?.name || "not found"}`);
-  log(`  Trips: ${tripsCol?.name || "not found"}`);
-  log(`  Spend: ${spendCol?.name || "not found"}`);
-
+  // ✅ Return EMPTY slots - user must manually configure
   return [
     {
       key: "main",
       dimensions: [
         { 
           key: "seat", 
-          columns: seatCol ? [seatCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "passenger_name", 
-          columns: nameCol ? [nameCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "pnr", 
-          columns: pnrCol ? [pnrCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "trips", 
-          columns: tripsCol ? [tripsCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "spend", 
-          columns: spendCol ? [spendCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "fare_type", 
-          columns: fareCol ? [fareCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
         { 
           key: "status", 
-          columns: statusCol ? [statusCol] : [] // ✅ Pre-fill if found
+          columns: []  // Empty - user must drag
         },
       ],
     },
   ];
 };
 
-const getQueriesFromChartConfig = (configs: ChartConfig[]): Query[] => {
+
+const getQueriesFromChartConfig = (
+  configs: ChartConfig[],
+  chartModel: ChartModel
+): Query[] => {
   log("🔍 getQueriesFromChartConfig called");
   log("📋 Configs received:", JSON.stringify(configs, null, 2));
   
-  const queries = configs.map((cfg) => {
-    const queryColumns = cfg.dimensions.flatMap((d) => d.columns || []);
+  // Get max rows from visual properties (default 1000)
+  const maxRows = (chartModel.visualProps as any)?.['max-rows'] || 1000; 
+  log("📊 Max rows:", maxRows);
+  
+  const queries = configs.map((config: ChartConfig): Query => {
+    // Build query by accumulating all dimension columns
+    const query = config.dimensions.reduce(
+      (acc, dimension) => ({
+        queryColumns: [...acc.queryColumns, ...(dimension.columns || [])],
+        queryParams: {
+          size: maxRows,
+        },
+      }),
+      { queryColumns: [] } as Query
+    );
     
-    log(`📊 Query columns count: ${queryColumns.length}`);
-    log("📌 Query columns:", queryColumns.map(c => c.name));
+    log(`📊 Query columns count: ${query.queryColumns.length}`);
+    if (query.queryColumns.length > 0) {
+      log("📌 Query columns:", query.queryColumns.map((c: any) => c.name));
+    } else {
+      log("⚠️ No columns configured - empty query");
+    }
     
-    return {
-      queryColumns: queryColumns,
-    };
+    return query;
   });
   
   log("✅ Final queries:", JSON.stringify(queries, null, 2));
