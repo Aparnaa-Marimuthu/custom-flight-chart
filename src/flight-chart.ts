@@ -644,14 +644,27 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       const configAny = modelAny.config;
       log("🔍 Config from model:", configAny);
       
-      // ✅ FIX #1: Handle both config structures
+      // ✅ DEBUG: Log ALL configs
       let cfg;
       if (configAny?.chartConfig && Array.isArray(configAny.chartConfig)) {
-        cfg = configAny.chartConfig[0];
-        log("🔍 Using config.chartConfig[0]");
-      } else if (Array.isArray(configAny)) {
-        cfg = configAny[0];
-        log("🔍 Using config[0]");
+        log(`🔍 Total configs available: ${configAny.chartConfig.length}`);
+        
+        configAny.chartConfig.forEach((c: any, idx: number) => {
+          const filled = c?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
+          log(`🔍 Config[${idx}]: ${filled} filled dimensions`);
+          log(`🔍 Config[${idx}] dimensions:`, c?.dimensions);
+        });
+        
+        // ✅ Pick the config with MOST filled dimensions
+        cfg = configAny.chartConfig.reduce((prev: any, curr: any) => {
+          const prevFilled = prev?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
+          const currFilled = curr?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
+          log(`🔍 Comparing: prev=${prevFilled} vs curr=${currFilled}`);
+          return currFilled > prevFilled ? curr : prev;
+        }, configAny.chartConfig[0]);
+        
+        const filledCount = cfg?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
+        log(`✅ Selected config with ${filledCount} filled dimensions`);
       }
       
       log("🔍 First config object:", cfg);
