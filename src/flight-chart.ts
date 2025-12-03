@@ -609,7 +609,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     log("📊 Query data:", queryData);
     
     const dataPoints = queryData.data;
-    const columns = queryData.columns || [];
+    const columns = dataPoints?.columns || queryData.columns || [];
 
     log("📌 Columns from queryData:", columns);
     log("📊 Data points:", dataPoints);
@@ -630,7 +630,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log(`✅ Processing ${actualData.length} rows`);
 
-    // ✅ BUILD SLOT → COLUMN NAME MAPPING (FIXED!)
+    // ✅ BUILD SLOT → COLUMN NAME MAPPING
     const slotToColumnName: Record<string, string> = {};
     
     try {
@@ -638,7 +638,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       const configAny = modelAny.config;
       log("🔍 Config from model:", configAny);
       
-      // ✅ FIX: Handle both config structures
       let cfg;
       if (configAny?.chartConfig && Array.isArray(configAny.chartConfig)) {
         cfg = configAny.chartConfig[0];  // ✅ Access via chartConfig property
@@ -647,55 +646,36 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         cfg = configAny[0];  // Fallback: direct array access
         log("🔍 Using config[0]");
       }
-      
-      log("🔍 First config object:", cfg);
+          log("🔍 First config object:", cfg);
 
       if (cfg?.dimensions) {
-        log("📋 Dimensions found:", cfg.dimensions.length, "items");
+        log("📋 Dimensions found:", cfg.dimensions);
         
-        cfg.dimensions.forEach((dim: any, index: number) => {
-          log(`🔍 [${index}] Processing dimension:`, dim);
+        cfg.dimensions.forEach((dim: any) => {
+          log(`🔍 Processing dimension: ${dim.key}`, dim);
           
-          if (!dim.key) {
-            log(`⚠️ Dimension at index ${index} has no key`);
-            return;
-          }
-          
-          if (!dim.columns || !dim.columns.length) {
+          if (!dim.key || !dim.columns || !dim.columns.length) {
             log(`⚠️ Dimension "${dim.key}" has no columns assigned`);
             return;
           }
           
           const columnId = dim.columns[0].id;
-          log(`🔍 Slot "${dim.key}" column ID: ${columnId}`);
+          log(`🔍 Looking for column with id: ${columnId}`);
           
-          // Find matching column from queryData by ID
-          const matchingColumn = columns.find((c: any) => c === columnId || c.id === columnId);
+          const matchingColumn = columns.find((c: any) => c.id === columnId);
           
           if (matchingColumn) {
-            // If columns array contains IDs (strings), find the actual column name
-            const actualColumnName = typeof matchingColumn === 'string' 
-              ? chartModel.columns.find((col: any) => col.id === matchingColumn)?.name
-              : matchingColumn.name;
-              
-            if (actualColumnName) {
-              slotToColumnName[dim.key] = actualColumnName;
-              log(`✅ Slot "${dim.key}" → column "${actualColumnName}"`);
-            } else {
-              log(`❌ Could not resolve column name for slot "${dim.key}"`);
-            }
+            slotToColumnName[dim.key] = matchingColumn.name;
+            log(`✅ Slot "${dim.key}" → column "${matchingColumn.name}"`);
           } else {
             log(`❌ No matching column found for slot "${dim.key}" with id ${columnId}`);
-            log(`   Available columns:`, columns);
           }
         });
       } else {
-        log("⚠️ No dimensions in config object");
-        log("   Config structure:", cfg);
+        log("⚠️ No dimensions in config");
       }
     } catch (e) {
       log("❌ Error building slot mapping:", e);
-      console.error("Stack trace:", e);
     }
 
     log("🗺️ Final slot → column mapping:", slotToColumnName);
@@ -708,34 +688,38 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log("✅ Seat slot is mapped to:", slotToColumnName["seat"]);
 
-    // ✅ HELPER: GET DATA BY COLUMN NAME (not position!)
+    // ✅ HELPER: GET DATA BY COLUMN NAME
     const getDataForColumn = (row: any, slotKey: string): any => {
       const columnName = slotToColumnName[slotKey];
       if (!columnName) {
+        log(`⚠️ No column mapped for slot: ${slotKey}`);
         return undefined;
       }
 
       // Handle both array and object row formats
       if (Array.isArray(row)) {
-        // Find column index by matching name with chartModel columns
-        const colIndex = chartModel.columns.findIndex((c: any) => c.name === columnName);
+        const colIndex = columns.findIndex((c: any) => c.name === columnName);
         const value = colIndex >= 0 ? row[colIndex] : undefined;
+        // Uncomment for very detailed logging:
+        // log(`  Array access: slot "${slotKey}" → column "${columnName}" → index ${colIndex} → value: ${value}`);
         return value;
       } else if (typeof row === "object") {
         const value = row[columnName];
+        // Uncomment for very detailed logging:
+        // log(`  Object access: slot "${slotKey}" → column "${columnName}" → value: ${value}`);
         return value;
       }
       return undefined;
     };
 
-    // ✅ PROCESS ROWS USING COLUMN NAMES
+    // ✅ PROCESS ROWS
     log("🔄 Starting row processing...");
     
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
         if (!row) {
-          if (i < 3) log(`⚠️ Row ${i}: Empty row`);
+          log(`⚠️ Row ${i}: Empty row`);
           continue;
         }
 
@@ -744,7 +728,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           log(`📊 Row ${i} sample:`, row);
         }
 
-        // Extract data by slot name (order-independent!)
         const seatKey = getDataForColumn(row, "seat")?.toString().trim();
         if (!seatKey) {
           if (i < 3) log(`⚠️ Row ${i}: No seat value`);
