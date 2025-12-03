@@ -583,7 +583,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 Reading data from ThoughtSpot context (slot‑driven + static fallback)");
+  log("📊 Reading data from ThoughtSpot context (slot‑driven only, no static fallback)");
 
   try {
     const chartModel = ctx.getChartModel();
@@ -614,9 +614,9 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
 
-    // ---------------------------------------------------
-    // 1) Try to build slot → column index map from config
-    // ---------------------------------------------------
+    // ----------------------------------------------------------------
+    // 1) Build slot → column index map ONLY for slots that are mapped
+    // ----------------------------------------------------------------
     const slotToColumnIndex: Record<string, number> = {};
     try {
       const modelAny = chartModel as any;
@@ -625,7 +625,11 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
       if (cfg?.dimensions) {
         cfg.dimensions.forEach((dim: any) => {
-          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          // Only consider slots with at least one mapped column
+          if (!dim.key || !dim.columns || !dim.columns.length) {
+            log(`ℹ️ Slot "${dim.key}" has no mapped columns, ignoring`);
+            return;
+          }
           const colId = dim.columns[0].id;
           const colIndex = columns.findIndex((c: any) => c.id === colId);
           if (colIndex >= 0) {
@@ -641,12 +645,18 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         log("⚠️ No dimensions in chart config (slots not configured?)");
       }
     } catch (e) {
-      log("⚠️ Error while building slot mapping, will fall back to static indexes:", e);
+      log("⚠️ Error while building slot mapping:", e);
     }
 
     log("🔍 Final slot → column index mapping:", slotToColumnIndex);
 
     const hasSeatSlotMapped = typeof slotToColumnIndex["seat"] === "number";
+    if (!hasSeatSlotMapped) {
+      log("❌ Seat slot is not mapped. No seat data will be created.");
+      return seatMap;
+    }
+
+    const hasStatusSlotMapped = typeof slotToColumnIndex["status"] === "number";
 
     // Helper: get value for a logical slot key from a row
     const getValFromSlot = (rowData: any[], slotKey: string): string => {
@@ -655,11 +665,9 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return rowData[idx]?.toString() || "";
     };
 
-    // ---------------------------------------------------
-    // 2) Iterate rows
-    //    If slot mapping works, use it.
-    //    Otherwise, fall back to known static indexes.
-    // ---------------------------------------------------
+    // ----------------------------------------------------------------
+    // 2) Iterate rows using ONLY slot-mapped indices
+    // ----------------------------------------------------------------
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
@@ -674,68 +682,57 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           continue;
         }
 
-        let seatKey = "";
-        let passengerName: string | undefined;
-        let pnr: string | undefined;
-        let statusStr: string | undefined;
-        let fareType: string | undefined;
-        let trips: number | undefined;
-        let spend: number | undefined;
-
-        if (hasSeatSlotMapped) {
-          // Preferred: use slot mapping, but only if slot exists
-          seatKey = getValFromSlot(rowData, "seat").trim();
-          passengerName = slotToColumnIndex["passenger_name"] !== undefined
-            ? getValFromSlot(rowData, "passenger_name") || undefined
-            : undefined;
-          pnr = slotToColumnIndex["pnr"] !== undefined
-            ? getValFromSlot(rowData, "pnr") || undefined
-            : undefined;
-          statusStr = slotToColumnIndex["status"] !== undefined
-            ? getValFromSlot(rowData, "status") || undefined
-            : undefined;
-          fareType = slotToColumnIndex["fare_type"] !== undefined
-            ? getValFromSlot(rowData, "fare_type") || undefined
-            : undefined;
-          if (slotToColumnIndex["trips"] !== undefined) {
-            const tripsStr = getValFromSlot(rowData, "trips");
-            trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
-          }
-          if (slotToColumnIndex["spend"] !== undefined) {
-            const spendStr = getValFromSlot(rowData, "spend");
-            spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
-          }
-        } else {
-          // Fallback: static index mapping (your original)
-          log("⚠️ Seat slot not mapped via config, using static index mapping for this row");
-          seatKey = rowData[1]?.toString().trim() || "";
-          passengerName = rowData[5]?.toString() || undefined;
-          pnr = rowData[0]?.toString() || undefined;
-          const tripsStr = rowData[3]?.toString() || "";
-          const spendStr = rowData[4]?.toString() || "";
-          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
-          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
-          fareType = rowData[6]?.toString() || undefined;
-          statusStr = rowData[2]?.toString() || undefined;
-        }
-
+        const seatKey = getValFromSlot(rowData, "seat").trim();
         if (!seatKey) {
           log(`⚠️ Row ${i} has no seat key (after mapping)`);
           continue;
         }
 
-        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${statusStr ?? "-"}`);
+        const passengerName =
+          slotToColumnIndex["passenger_name"] !== undefined
+            ? getValFromSlot(rowData, "passenger_name") || undefined
+            : undefined;
+
+        const pnr =
+          slotToColumnIndex["pnr"] !== undefined
+            ? getValFromSlot(rowData, "pnr") || undefined
+            : undefined;
 
         let status: SeatStatus | undefined;
-        if (statusStr === "Empty") {
-          status = "Empty";
-        } else if (statusStr === "Repeated Customer") {
-          status = "Frequent Traveller";
-        } else if (statusStr === "Occupied") {
-          status = "Occupied";
+        if (hasStatusSlotMapped) {
+          const statusStr = getValFromSlot(rowData, "status") || undefined;
+          if (statusStr === "Empty") {
+            status = "Empty";
+          } else if (statusStr === "Repeated Customer") {
+            status = "Frequent Traveller";
+          } else if (statusStr === "Occupied") {
+            status = "Occupied";
+          } else {
+            status = undefined;
+          }
         } else {
-          status = undefined; // no status slot or unknown value
+          // Status slot not mapped → treat as no status for all seats
+          status = undefined;
         }
+
+        let fareType: string | undefined;
+        if (slotToColumnIndex["fare_type"] !== undefined) {
+          fareType = getValFromSlot(rowData, "fare_type") || undefined;
+        }
+
+        let trips: number | undefined;
+        if (slotToColumnIndex["trips"] !== undefined) {
+          const tripsStr = getValFromSlot(rowData, "trips");
+          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+        }
+
+        let spend: number | undefined;
+        if (slotToColumnIndex["spend"] !== undefined) {
+          const spendStr = getValFromSlot(rowData, "spend");
+          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+        }
+
+        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${status ?? "-"}`);
 
         seatMap[seatKey] = {
           name: passengerName,
@@ -743,9 +740,8 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           trips,
           spend,
           item: fareType,
-          status, // may be undefined if Status slot not mapped
+          status, // undefined when status slot is not mapped
         };
-
       } catch (rowError) {
         log(`❌ Error processing row ${i}:`, rowError);
       }
@@ -771,7 +767,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     return seatMap;
   }
 }
-
 
 
 // -------------------------------------------------------
