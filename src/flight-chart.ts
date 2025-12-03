@@ -916,10 +916,10 @@ const getQueriesFromChartConfig = (
   log("📋 Configs received:", JSON.stringify(configs, null, 2));
   
   // Get max rows from visual properties (default 1000)
-  const maxRows = (chartModel.visualProps as any)?.['max-rows'] || 1000; 
+  const maxRows = (chartModel.visualProps as any)?.['max-rows'] || 1000;
   log("📊 Max rows:", maxRows);
   
-  const queries = configs.map((config: ChartConfig): Query => {
+  const queries = configs.map((config: ChartConfig): Query | null => {
     // Build query by accumulating all dimension columns
     const query = config.dimensions.reduce(
       (acc, dimension) => ({
@@ -931,17 +931,21 @@ const getQueriesFromChartConfig = (
       { queryColumns: [] } as Query
     );
     
-    log(`📊 Query columns count: ${query.queryColumns.length}`);
-    if (query.queryColumns.length > 0) {
-      log("📌 Query columns:", query.queryColumns.map((c: any) => c.name));
-    } else {
-      log("⚠️ No columns configured - empty query");
+    // ✅ FIX: If no columns configured, return null (don't send query to ThoughtSpot)
+    if (query.queryColumns.length === 0) {
+      log("⚠️ No columns configured - skipping query");
+      return null;
     }
     
+    log(`📊 Query columns count: ${query.queryColumns.length}`);
+    log("📌 Query columns:", query.queryColumns.map((c: any) => c.name));
+    
     return query;
-  });
+  }).filter((q): q is Query => q !== null);  // ✅ Remove null queries
   
   log("✅ Final queries:", JSON.stringify(queries, null, 2));
+  log(`✅ Total valid queries: ${queries.length}`);
+  
   return queries;
 };
 
