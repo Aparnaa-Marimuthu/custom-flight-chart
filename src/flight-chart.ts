@@ -2,7 +2,6 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
-  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -787,46 +786,48 @@ async function renderChart(ctx: CustomChartContext) {
 // CHART CONFIG - WITH PROPER COLUMN MAPPING
 // -------------------------------------------------------
 const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("📋 Building chart config from model");
+  log("📋 Building chart config from model (by column name)");
 
   const cols = chartModel.columns || [];
-  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
-  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
 
-  log(`Found ${attributes.length} attributes and ${measures.length} measures`);
+  // Helper to find a column by name (case-insensitive)
+  const findCol = (names: string[]) => {
+    const lowerNames = names.map((n) => n.toLowerCase());
+    return cols.find((c: any) =>
+      lowerNames.includes((c.name || c.columnName || "").toLowerCase())
+    );
+  };
+
+  // Map each slot to the correct worksheet column by name
+  const seatCol          = findCol(["Seat", "Seat Number"]);
+  const passengerNameCol = findCol(["Passenger Name", "Passenger_Name", "Name"]);
+  const pnrCol           = findCol(["Pnr", "PNR", "Booking Ref", "Booking Reference"]);
+  const tripsCol         = findCol(["Total No Of Travel", "Trips", "Number of Trips"]);
+  const spendCol         = findCol(["Total Amount Spent", "Total Spend", "Spend"]);
+  const fareTypeCol      = findCol(["Fare Type", "Fare"]);
+  const statusCol        = findCol(["Status"]);
+
+  log("🔗 Slot to column by name:", {
+    seat: seatCol?.name,
+    passenger_name: passengerNameCol?.name,
+    pnr: pnrCol?.name,
+    trips: tripsCol?.name,
+    spend: spendCol?.name,
+    fare_type: fareTypeCol?.name,
+    status: statusCol?.name,
+  });
 
   return [
     {
       key: "main",
       dimensions: [
-        { 
-          key: "seat", 
-          columns: attributes.length > 0 ? [attributes[0]] : [] 
-        },
-        { 
-          key: "passenger_name", 
-          columns: attributes.length > 1 ? [attributes[1]] : [] 
-        },
-        { 
-          key: "pnr", 
-          columns: attributes.length > 2 ? [attributes[2]] : [] 
-        },
-        { 
-          key: "trips", 
-          columns: measures.length > 0 ? [measures[0]] : [] 
-        },
-        { 
-          key: "spend", 
-          columns: measures.length > 1 ? [measures[1]] : [] 
-        },
-        { 
-          key: "fare_type", 
-          columns: attributes.length > 3 ? [attributes[3]] : [] 
-        },
-        { 
-          key: "status", 
-          columns: attributes.length > 4 ? [attributes[4]] : [] 
-        },
+        { key: "seat",           columns: seatCol          ? [seatCol]          : [] },
+        { key: "passenger_name", columns: passengerNameCol ? [passengerNameCol] : [] },
+        { key: "pnr",            columns: pnrCol           ? [pnrCol]           : [] },
+        { key: "trips",          columns: tripsCol         ? [tripsCol]         : [] },
+        { key: "spend",          columns: spendCol         ? [spendCol]         : [] },
+        { key: "fare_type",      columns: fareTypeCol      ? [fareTypeCol]      : [] },
+        { key: "status",         columns: statusCol        ? [statusCol]        : [] },
       ],
     },
   ];
