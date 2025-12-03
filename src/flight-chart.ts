@@ -638,19 +638,22 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       const configAny = modelAny.config;
       log("🔍 Config from model:", configAny);
       
+      // ✅ FIX #1: Handle both config structures
       let cfg;
       if (configAny?.chartConfig && Array.isArray(configAny.chartConfig)) {
-        cfg = configAny.chartConfig[0];  // ✅ Access via chartConfig property
+        cfg = configAny.chartConfig[0];
         log("🔍 Using config.chartConfig[0]");
       } else if (Array.isArray(configAny)) {
-        cfg = configAny[0];  // Fallback: direct array access
+        cfg = configAny[0];
         log("🔍 Using config[0]");
       }
-          log("🔍 First config object:", cfg);
+      
+      log("🔍 First config object:", cfg);
 
       if (cfg?.dimensions) {
         log("📋 Dimensions found:", cfg.dimensions);
         
+        // ✅ FIX #2: Match column IDs correctly
         cfg.dimensions.forEach((dim: any) => {
           log(`🔍 Processing dimension: ${dim.key}`, dim);
           
@@ -662,13 +665,21 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           const columnId = dim.columns[0].id;
           log(`🔍 Looking for column with id: ${columnId}`);
           
-          const matchingColumn = columns.find((c: any) => c.id === columnId);
+          // ✅ columns array contains ID strings, match directly
+          const matchedId = columns.find((c: any) => c === columnId);
           
-          if (matchingColumn) {
-            slotToColumnName[dim.key] = matchingColumn.name;
-            log(`✅ Slot "${dim.key}" → column "${matchingColumn.name}"`);
+          if (matchedId) {
+            // Find the actual column info from chartModel
+            const columnInfo = chartModel.columns.find((col: any) => col.id === matchedId);
+            
+            if (columnInfo) {
+              slotToColumnName[dim.key] = columnInfo.name;
+              log(`✅ Slot "${dim.key}" → column "${columnInfo.name}"`);
+            } else {
+              log(`❌ Could not find column info for id ${matchedId}`);
+            }
           } else {
-            log(`❌ No matching column found for slot "${dim.key}" with id ${columnId}`);
+            log(`❌ Column id ${columnId} not in data columns array`);
           }
         });
       } else {
@@ -676,6 +687,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       }
     } catch (e) {
       log("❌ Error building slot mapping:", e);
+      console.error("Stack trace:", e);
     }
 
     log("🗺️ Final slot → column mapping:", slotToColumnName);
@@ -688,26 +700,21 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     log("✅ Seat slot is mapped to:", slotToColumnName["seat"]);
 
-    // ✅ HELPER: GET DATA BY COLUMN NAME
+    // ✅ FIX #3: HELPER - GET DATA BY COLUMN NAME
     const getDataForColumn = (row: any, slotKey: string): any => {
       const columnName = slotToColumnName[slotKey];
       if (!columnName) {
-        log(`⚠️ No column mapped for slot: ${slotKey}`);
         return undefined;
       }
 
       // Handle both array and object row formats
       if (Array.isArray(row)) {
-        const colIndex = columns.findIndex((c: any) => c.name === columnName);
+        // ✅ Find index by matching column name in chartModel
+        const colIndex = chartModel.columns.findIndex((c: any) => c.name === columnName);
         const value = colIndex >= 0 ? row[colIndex] : undefined;
-        // Uncomment for very detailed logging:
-        // log(`  Array access: slot "${slotKey}" → column "${columnName}" → index ${colIndex} → value: ${value}`);
         return value;
       } else if (typeof row === "object") {
-        const value = row[columnName];
-        // Uncomment for very detailed logging:
-        // log(`  Object access: slot "${slotKey}" → column "${columnName}" → value: ${value}`);
-        return value;
+        return row[columnName];
       }
       return undefined;
     };
@@ -719,7 +726,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       try {
         const row = actualData[i];
         if (!row) {
-          log(`⚠️ Row ${i}: Empty row`);
+          if (i < 3) log(`⚠️ Row ${i}: Empty row`);
           continue;
         }
 
