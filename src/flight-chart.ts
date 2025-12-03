@@ -600,7 +600,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
     const queryData = chartModel.data[0] as any;
     const dataPoints = queryData.data;
-    const columns = queryData.columns || [];
+    const columns = chartModel.columns || [];
 
     if (!dataPoints) {
       log("⚠️ No data points");
