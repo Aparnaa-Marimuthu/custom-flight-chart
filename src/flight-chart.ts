@@ -2,6 +2,7 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
+  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -585,90 +586,144 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 Reading data from ThoughtSpot (name-based mapping)");
+  log("📊 buildSeatDataFromContext called");
 
   try {
     const chartModel = ctx.getChartModel();
+    log("🔍 Chart model:", chartModel);
+    
+    if (!chartModel) {
+      log("❌ No chart model available");
+      return seatMap;
+    }
+
+    log("📦 Chart model data:", chartModel.data);
+    log("⚙️ Chart model config:", chartModel.config);
+    
     if (!chartModel?.data?.[0]) {
-      log("⚠️ No chart data available");
+      log("❌ No chart data available at chartModel.data[0]");
       return seatMap;
     }
 
     const queryData = chartModel.data[0] as any;
+    log("📊 Query data:", queryData);
+    
     const dataPoints = queryData.data;
     const columns = queryData.columns || [];
 
+    log("📌 Columns from queryData:", columns);
+    log("📊 Data points:", dataPoints);
+
     if (!dataPoints) {
-      log("⚠️ No data points");
+      log("❌ No data points in queryData");
       return seatMap;
     }
 
     const actualData = dataPoints.dataValue || dataPoints;
+    log("📦 Actual data type:", Array.isArray(actualData) ? "Array" : typeof actualData);
+    log("📊 Actual data length:", Array.isArray(actualData) ? actualData.length : "N/A");
+    
     if (!Array.isArray(actualData)) {
-      log("❌ Data is not an array");
+      log("❌ Data is not an array, cannot process");
       return seatMap;
     }
 
-    log(`📦 Processing ${actualData.length} rows`);
+    log(`✅ Processing ${actualData.length} rows`);
 
-    // ✅ BUILD SLOT → COLUMN NAME MAPPING (like reference code)
+    // ✅ BUILD SLOT → COLUMN NAME MAPPING
     const slotToColumnName: Record<string, string> = {};
     
     try {
       const modelAny = chartModel as any;
       const configAny = modelAny.config;
+      log("🔍 Config from model:", configAny);
+      
       const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
+      log("🔍 First config object:", cfg);
 
       if (cfg?.dimensions) {
+        log("📋 Dimensions found:", cfg.dimensions);
+        
         cfg.dimensions.forEach((dim: any) => {
-          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          log(`🔍 Processing dimension: ${dim.key}`, dim);
+          
+          if (!dim.key || !dim.columns || !dim.columns.length) {
+            log(`⚠️ Dimension "${dim.key}" has no columns assigned`);
+            return;
+          }
           
           const columnId = dim.columns[0].id;
+          log(`🔍 Looking for column with id: ${columnId}`);
+          
           const matchingColumn = columns.find((c: any) => c.id === columnId);
           
           if (matchingColumn) {
             slotToColumnName[dim.key] = matchingColumn.name;
             log(`✅ Slot "${dim.key}" → column "${matchingColumn.name}"`);
+          } else {
+            log(`❌ No matching column found for slot "${dim.key}" with id ${columnId}`);
           }
         });
+      } else {
+        log("⚠️ No dimensions in config");
       }
     } catch (e) {
-      log("⚠️ Error building slot mapping:", e);
+      log("❌ Error building slot mapping:", e);
     }
 
-    log("🔍 Slot → Column mapping:", slotToColumnName);
+    log("🗺️ Final slot → column mapping:", slotToColumnName);
 
     // ✅ CHECK IF SEAT SLOT IS MAPPED
     if (!slotToColumnName["seat"]) {
-      log("❌ Seat slot not configured! Please drag a column to the Seat slot.");
+      log("❌ CRITICAL: Seat slot not configured! User must drag a column to the Seat slot.");
       return seatMap;
     }
 
-    // ✅ HELPER: GET DATA BY COLUMN NAME (not position!)
+    log("✅ Seat slot is mapped to:", slotToColumnName["seat"]);
+
+    // ✅ HELPER: GET DATA BY COLUMN NAME
     const getDataForColumn = (row: any, slotKey: string): any => {
       const columnName = slotToColumnName[slotKey];
-      if (!columnName) return undefined;
+      if (!columnName) {
+        log(`⚠️ No column mapped for slot: ${slotKey}`);
+        return undefined;
+      }
 
       // Handle both array and object row formats
       if (Array.isArray(row)) {
         const colIndex = columns.findIndex((c: any) => c.name === columnName);
-        return colIndex >= 0 ? row[colIndex] : undefined;
+        const value = colIndex >= 0 ? row[colIndex] : undefined;
+        // Uncomment for very detailed logging:
+        // log(`  Array access: slot "${slotKey}" → column "${columnName}" → index ${colIndex} → value: ${value}`);
+        return value;
       } else if (typeof row === "object") {
-        return row[columnName];
+        const value = row[columnName];
+        // Uncomment for very detailed logging:
+        // log(`  Object access: slot "${slotKey}" → column "${columnName}" → value: ${value}`);
+        return value;
       }
       return undefined;
     };
 
-    // ✅ PROCESS ROWS USING COLUMN NAMES
+    // ✅ PROCESS ROWS
+    log("🔄 Starting row processing...");
+    
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
-        if (!row) continue;
+        if (!row) {
+          log(`⚠️ Row ${i}: Empty row`);
+          continue;
+        }
 
-        // Extract data by slot name (order-independent!)
+        // Log first 3 rows for debugging
+        if (i < 3) {
+          log(`📊 Row ${i} sample:`, row);
+        }
+
         const seatKey = getDataForColumn(row, "seat")?.toString().trim();
         if (!seatKey) {
-          log(`⚠️ Row ${i}: No seat value`);
+          if (i < 3) log(`⚠️ Row ${i}: No seat value`);
           continue;
         }
 
@@ -702,23 +757,28 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           status,
         };
 
-        log(`✅ ${seatKey}: ${passengerName || "-"}, ${statusStr || "-"}`);
+        if (i < 3) {
+          log(`✅ Row ${i} → Seat ${seatKey}: ${passengerName || "-"}, ${statusStr || "-"}`);
+        }
 
       } catch (rowError) {
         log(`❌ Error processing row ${i}:`, rowError);
       }
     }
 
-    log(`✅ Processed ${Object.keys(seatMap).length} seats`);
+    log(`✅ Processed ${Object.keys(seatMap).length} seats total`);
 
     if (Object.keys(seatMap).length > 0) {
-      const samples = Object.keys(seatMap).slice(0, 3);
+      const samples = Object.keys(seatMap).slice(0, 5);
       log("📌 Sample seats:", samples.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
+    } else {
+      log("⚠️ WARNING: No seats were processed!");
     }
 
     return seatMap;
   } catch (error) {
-    log("❌ Error reading context:", error);
+    log("❌ FATAL ERROR in buildSeatDataFromContext:", error);
+    console.error("Stack trace:", error);
     return seatMap;
   }
 }
@@ -727,65 +787,133 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 // RENDER - USES THOUGHTSPOT DATA
 // -------------------------------------------------------
 async function renderChart(ctx: CustomChartContext) {
-  log("🎨 renderChart() called");
+  log("🎨 ========== renderChart() START ==========");
+  log("📅 Timestamp:", new Date().toISOString());
+  
   ctx.emitEvent(ChartToTSEvent.RenderStart);
+  log("✅ RenderStart event emitted");
 
   const dynamicSeatData = buildSeatDataFromContext(ctx);
+  log("📊 Seat data extracted, count:", Object.keys(dynamicSeatData).length);
 
   if (Object.keys(dynamicSeatData).length === 0) {
-    log("⚠️ No seat data to render");
+    log("⚠️ No seat data to render - showing configuration message");
     const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;'>No data available. Please configure the Seat slot in the chart configuration panel.</div>";
+    root.innerHTML = "<div style='padding:20px;text-align:center;font-family:sans-serif;'><h3>⚙️ Configuration Required</h3><p>Please drag columns to the Configure panel slots:</p><ul style='text-align:left;display:inline-block;'><li><strong>Seat</strong> (required)</li><li>Passenger Name</li><li>PNR</li><li>Status</li><li>Fare Type</li><li>Trips</li><li>Spend</li></ul></div>";
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
+    log("✅ RenderComplete event emitted (no data)");
     return;
   }
 
+  log("🎨 Rendering SVG map...");
   const root =
     document.getElementById("flight-chart") ||
     (() => {
       const div = document.createElement("div");
       div.id = "flight-chart";
       document.body.appendChild(div);
+      log("📦 Created flight-chart div");
       return div;
     })();
 
   root.innerHTML = "";
+  log("🧹 Cleared existing content");
 
   await loadAndStyleSVG(root, dynamicSeatData);
+  log("✅ SVG loaded and styled");
+  
   attachInteractivity(root, dynamicSeatData);
+  log("✅ Interactivity attached");
 
-  log("✅ Rendering complete");
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
+  log("✅ RenderComplete event emitted");
+  log("🎨 ========== renderChart() END ==========");
 }
 
 // -------------------------------------------------------
 // ✅ FIXED: LET USER CONFIGURE (don't pre-assign positions)
 // -------------------------------------------------------
-const getDefaultChartConfig = (_chartModel: ChartModel): ChartConfig[] => {
-  log("📋 Building default chart config");
+const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
+  log("📋 getDefaultChartConfig called");
+  log("📊 Available columns:", chartModel.columns);
 
-  // Return empty config - let user configure via UI
+  const cols = chartModel.columns || [];
+  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
+  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
+
+  log(`✅ Found ${attributes.length} attributes and ${measures.length} measures`);
+  
+  // Log column names for debugging
+  log("🔵 Attributes:", attributes.map(a => a.name));
+  log("🟢 Measures:", measures.map(m => m.name));
+
   return [
     {
       key: "main",
-      dimensions: [],
+      dimensions: [
+        { 
+          key: "seat", 
+          columns: [] // Empty - user will configure
+        },
+        { 
+          key: "passenger_name", 
+          columns: [] 
+        },
+        { 
+          key: "pnr", 
+          columns: [] 
+        },
+        { 
+          key: "trips", 
+          columns: [] 
+        },
+        { 
+          key: "spend", 
+          columns: [] 
+        },
+        { 
+          key: "fare_type", 
+          columns: [] 
+        },
+        { 
+          key: "status", 
+          columns: [] 
+        },
+      ],
     },
   ];
 };
 
 const getQueriesFromChartConfig = (configs: ChartConfig[]): Query[] => {
-  return configs.map((cfg) => ({
-    queryColumns: cfg.dimensions.flatMap((d) => d.columns || []),
-  }));
+  log("🔍 getQueriesFromChartConfig called");
+  log("📋 Configs received:", JSON.stringify(configs, null, 2));
+  
+  const queries = configs.map((cfg) => {
+    const queryColumns = cfg.dimensions.flatMap((d) => d.columns || []);
+    
+    log(`📊 Query columns count: ${queryColumns.length}`);
+    log("📌 Query columns:", queryColumns.map(c => c.name));
+    
+    return {
+      queryColumns: queryColumns,
+    };
+  });
+  
+  log("✅ Final queries:", JSON.stringify(queries, null, 2));
+  return queries;
 };
+
 
 // -------------------------------------------------------
 // INIT
 // -------------------------------------------------------
 (async () => {
-  log("🚀 Initializing ThoughtSpot Flight Chart...");
+  log("🚀 ========== INITIALIZATION START ==========");
+  log("📅 Timestamp:", new Date().toISOString());
 
   try {
+    log("🔧 Calling getChartContext...");
+    
     const ctx = await getChartContext({
       getDefaultChartConfig,
       getQueriesFromChartConfig,
@@ -847,31 +975,38 @@ const getQueriesFromChartConfig = (configs: ChartConfig[]): Query[] => {
     });
 
     log("✅ Context created successfully");
+    log("🔍 Context object:", ctx);
     
     // Poll for data availability
     const checkAndRender = async () => {
       try {
+        log("🔍 Checking for data availability...");
         const chartModel = ctx.getChartModel();
+        log("📊 Chart model:", chartModel);
+        
         const hasData = chartModel?.data?.[0]?.data;
+        log("📦 Has data?", !!hasData);
         
         if (hasData) {
-          log("✅ Data available, rendering...");
+          log("✅ Data is available, calling renderChart...");
           await renderChart(ctx);
           return true;
         } else {
-          log("⏳ Waiting for data...");
+          log("⏳ No data yet, will retry...");
           return false;
         }
       } catch (e) {
         log("⚠️ Error checking for data:", e);
+        console.error("Stack trace:", e);
         return false;
       }
     };
 
+    log("🔄 Attempting immediate render...");
     const rendered = await checkAndRender();
     
     if (!rendered) {
-      log("⏳ No immediate data, polling...");
+      log("⏳ No immediate data, starting polling...");
       
       let attempts = 0;
       const maxAttempts = 15;
@@ -882,16 +1017,25 @@ const getQueriesFromChartConfig = (configs: ChartConfig[]): Query[] => {
         
         const success = await checkAndRender();
         
-        if (success || attempts >= maxAttempts) {
+        if (success) {
+          log("✅ Render successful, stopping poll");
           clearInterval(pollInterval);
-          if (!success) {
-            log("⚠️ Timeout: Please configure columns in the chart panel.");
-          }
+        } else if (attempts >= maxAttempts) {
+          log("⏰ Max attempts reached, stopping poll");
+          log("⚠️ Please configure columns in the chart panel");
+          clearInterval(pollInterval);
         }
       }, 2000);
+    } else {
+      log("✅ Immediate render successful");
     }
     
+    log("🚀 ========== INITIALIZATION COMPLETE ==========");
+    
   } catch (err) {
-    log("❌ FATAL ERROR:", err);
+    log("❌ ========== FATAL ERROR DURING INIT ==========");
+    log("❌ Error:", err);
+    console.error("Full error:", err);
+    console.error("Stack trace:", err);
   }
 })();
