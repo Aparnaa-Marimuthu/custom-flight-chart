@@ -483,16 +483,17 @@ async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
     rect.style.fill = colorForStatus("Empty");
   });
   
-  // Color seats based on data
+ // Color seats based on data
   Object.keys(seatData).forEach((seatKey) => {
     const seatG = findSeatDom(svgRoot, seatKey);
     if (!seatG) return;
 
-    const status = seatData[seatKey].status;
+    const status = seatData[seatKey].status as SeatStatus | undefined;
     const rect = seatG.querySelector("rect");
     if (!rect) return;
 
-    rect.style.fill = colorForStatus(status);
+    // If no status (Status slot not mapped), keep all seats grey
+    rect.style.fill = status ? colorForStatus(status) : colorForStatus("Empty");
   });
 }
 
@@ -516,41 +517,63 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
     const bbox = (seatEl as any).getBoundingClientRect();
     const x = bbox.left + bbox.width / 2;
     const y = bbox.top - 10;
-    
+
+    const statusText = info.status === "Frequent Traveller"
+      ? "Repeated Customer"
+      : info.status;
+
     const statusColor =
       info.status === "Frequent Traveller" ? "#ff9933" :
       info.status === "Occupied" ? "#4da6ff" :
       "#cccccc";
 
-    showTooltip(
-      `
-      <strong>Seat: ${seatKey}</strong>
+    const nameLine = info.name ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Passenger:</span>
         <span class="tooltip-value">${info.name}</span>
-      </div>
+      </div>` : "";
+
+    const pnrLine = info.travellerId ? `
       <div class="tooltip-row">
         <span class="tooltip-label">PNR:</span>
         <span class="tooltip-value">${info.travellerId}</span>
-      </div>
+      </div>` : "";
+
+    const tripsLine = typeof info.trips === "number" ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Trips (last 12 months):</span>
         <span class="tooltip-value">${info.trips}</span>
-      </div>
+      </div>` : "";
+
+    const spendLine = typeof info.spend === "number" ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Total spend:</span>
         <span class="tooltip-value">$${Number(info.spend).toFixed(2)}</span>
-      </div>
+      </div>` : "";
+
+    const fareLine = info.item ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Fare type:</span>
         <span class="tooltip-value">${info.item}</span>
-      </div>
+      </div>` : "";
+
+    const statusLine = info.status ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Status:</span>
         <span class="tooltip-value" style="color:${statusColor};font-weight:600;">
-          ${info.status === "Frequent Traveller" ? "Repeated Customer" : info.status}
+          ${statusText}
         </span>
-      </div>
+      </div>` : "";
+
+    showTooltip(
+      `
+      <strong>Seat: ${seatKey}</strong>
+      ${nameLine}
+      ${pnrLine}
+      ${tripsLine}
+      ${spendLine}
+      ${fareLine}
+      ${statusLine}
       `,
       x,
       y
@@ -652,36 +675,48 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         }
 
         let seatKey = "";
-        let passengerName = "";
-        let pnr = "";
-        let statusStr = "";
-        let fareType = "";
-        let trips = 0;
-        let spend = 0;
+        let passengerName: string | undefined;
+        let pnr: string | undefined;
+        let statusStr: string | undefined;
+        let fareType: string | undefined;
+        let trips: number | undefined;
+        let spend: number | undefined;
 
         if (hasSeatSlotMapped) {
-          // ✅ Preferred: use slot mapping
+          // Preferred: use slot mapping, but only if slot exists
           seatKey = getValFromSlot(rowData, "seat").trim();
-          passengerName = getValFromSlot(rowData, "passenger_name") || "-";
-          pnr = getValFromSlot(rowData, "pnr") || "-";
-          statusStr = getValFromSlot(rowData, "status") || "Empty";
-          fareType = getValFromSlot(rowData, "fare_type") || "N/A";
-          const tripsStr = getValFromSlot(rowData, "trips") || "0";
-          const spendStr = getValFromSlot(rowData, "spend") || "0";
-          trips = parseInt(tripsStr, 10) || 0;
-          spend = parseFloat(spendStr) || 0;
+          passengerName = slotToColumnIndex["passenger_name"] !== undefined
+            ? getValFromSlot(rowData, "passenger_name") || undefined
+            : undefined;
+          pnr = slotToColumnIndex["pnr"] !== undefined
+            ? getValFromSlot(rowData, "pnr") || undefined
+            : undefined;
+          statusStr = slotToColumnIndex["status"] !== undefined
+            ? getValFromSlot(rowData, "status") || undefined
+            : undefined;
+          fareType = slotToColumnIndex["fare_type"] !== undefined
+            ? getValFromSlot(rowData, "fare_type") || undefined
+            : undefined;
+          if (slotToColumnIndex["trips"] !== undefined) {
+            const tripsStr = getValFromSlot(rowData, "trips");
+            trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          }
+          if (slotToColumnIndex["spend"] !== undefined) {
+            const spendStr = getValFromSlot(rowData, "spend");
+            spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          }
         } else {
-          // ⚠️ Fallback: static index mapping (your working version)
+          // Fallback: static index mapping (your original)
           log("⚠️ Seat slot not mapped via config, using static index mapping for this row");
           seatKey = rowData[1]?.toString().trim() || "";
-          passengerName = rowData[5]?.toString() || "-";
-          pnr = rowData[0]?.toString() || "-";
-          const tripsStr = rowData[3]?.toString() || "0";
-          const spendStr = rowData[4]?.toString() || "0";
-          trips = parseInt(tripsStr, 10) || 0;
-          spend = parseFloat(spendStr) || 0;
-          fareType = rowData[6]?.toString() || "N/A";
-          statusStr = rowData[2]?.toString() || "Empty";
+          passengerName = rowData[5]?.toString() || undefined;
+          pnr = rowData[0]?.toString() || undefined;
+          const tripsStr = rowData[3]?.toString() || "";
+          const spendStr = rowData[4]?.toString() || "";
+          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          fareType = rowData[6]?.toString() || undefined;
+          statusStr = rowData[2]?.toString() || undefined;
         }
 
         if (!seatKey) {
@@ -689,15 +724,17 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           continue;
         }
 
-        log(`✅ Extracted seat ${seatKey}: ${passengerName}, ${statusStr}`);
+        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${statusStr ?? "-"}`);
 
-        let status: SeatStatus;
+        let status: SeatStatus | undefined;
         if (statusStr === "Empty") {
           status = "Empty";
         } else if (statusStr === "Repeated Customer") {
           status = "Frequent Traveller";
-        } else {
+        } else if (statusStr === "Occupied") {
           status = "Occupied";
+        } else {
+          status = undefined; // no status slot or unknown value
         }
 
         seatMap[seatKey] = {
@@ -706,8 +743,9 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           trips,
           spend,
           item: fareType,
-          status,
+          status, // may be undefined if Status slot not mapped
         };
+
       } catch (rowError) {
         log(`❌ Error processing row ${i}:`, rowError);
       }
