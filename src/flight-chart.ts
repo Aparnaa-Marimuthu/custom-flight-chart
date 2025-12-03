@@ -2,7 +2,6 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
-  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -776,51 +775,25 @@ async function renderChart(ctx: CustomChartContext) {
 // -------------------------------------------------------
 // CHART CONFIG - WITH PROPER COLUMN MAPPING
 // -------------------------------------------------------
-const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("📋 Building chart config from model");
+    const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
+      // Use the config that TS already has on the model
+      const rawConfig = (chartModel as any).config;
+      const cfgArray = rawConfig?.chartConfig ?? rawConfig;
 
-  const cols = chartModel.columns || [];
-  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
-  const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
+      if (Array.isArray(cfgArray) && cfgArray.length) {
+        log("📋 Using chartModel.config from TS");
+        return cfgArray;
+      }
 
-  log(`Found ${attributes.length} attributes and ${measures.length} measures`);
-
-  return [
-    {
-      key: "main",
-      dimensions: [
-        { 
-          key: "seat", 
-          columns: attributes.length > 0 ? [attributes[0]] : [] 
+      // Fallback: empty config
+      log(" No config on chartModel, returning empty default");
+      return [
+        {
+          key: "main",
+          dimensions: [],
         },
-        { 
-          key: "passenger_name", 
-          columns: attributes.length > 1 ? [attributes[1]] : [] 
-        },
-        { 
-          key: "pnr", 
-          columns: attributes.length > 2 ? [attributes[2]] : [] 
-        },
-        { 
-          key: "trips", 
-          columns: measures.length > 0 ? [measures[0]] : [] 
-        },
-        { 
-          key: "spend", 
-          columns: measures.length > 1 ? [measures[1]] : [] 
-        },
-        { 
-          key: "fare_type", 
-          columns: attributes.length > 3 ? [attributes[3]] : [] 
-        },
-        { 
-          key: "status", 
-          columns: attributes.length > 4 ? [attributes[4]] : [] 
-        },
-      ],
-    },
-  ];
-};
+      ];
+    };
 
 const getFixedQueries = (configs: ChartConfig[]): Query[] => {
   return configs.map((cfg) => ({
