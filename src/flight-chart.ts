@@ -842,10 +842,39 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   const measures = cols.filter((c) => c.type === ColumnType.MEASURE);
 
   log(`✅ Found ${attributes.length} attributes and ${measures.length} measures`);
-  
-  // Log column names for debugging
   log("🔵 Attributes:", attributes.map(a => a.name));
   log("🟢 Measures:", measures.map(m => m.name));
+
+  // ✅ AUTO-DETECT COLUMNS BY NAME PATTERNS (like reference code)
+  const findColumn = (keys: string[], list: any[]) => {
+    const found = list.find(col => 
+      keys.some(key => col.name.toLowerCase().includes(key.toLowerCase()))
+    );
+    if (found) {
+      log(`🔍 Auto-detected column for keys [${keys.join(", ")}]: "${found.name}"`);
+    }
+    return found;
+  };
+
+  // Try to find columns by common name patterns
+  const seatCol = findColumn(["seat", "seatnumber", "seat_number", "seat number"], attributes);
+  const nameCol = findColumn(["passenger", "name", "passenger_name", "passenger name"], attributes);
+  const pnrCol = findColumn(["pnr", "booking", "reference"], attributes);
+  const statusCol = findColumn(["status", "state"], attributes);
+  const fareCol = findColumn(["fare", "type", "fare_type", "fare type"], attributes);
+  
+  // For measures, look for trip/count and spend/amount patterns
+  const tripsCol = findColumn(["trip", "trips", "travel", "count", "no of travel"], measures);
+  const spendCol = findColumn(["spend", "spent", "amount", "amont", "amont spent"], measures);
+
+  log("✅ Auto-detection results:");
+  log(`  Seat: ${seatCol?.name || "not found"}`);
+  log(`  Passenger Name: ${nameCol?.name || "not found"}`);
+  log(`  PNR: ${pnrCol?.name || "not found"}`);
+  log(`  Status: ${statusCol?.name || "not found"}`);
+  log(`  Fare Type: ${fareCol?.name || "not found"}`);
+  log(`  Trips: ${tripsCol?.name || "not found"}`);
+  log(`  Spend: ${spendCol?.name || "not found"}`);
 
   return [
     {
@@ -853,31 +882,31 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
       dimensions: [
         { 
           key: "seat", 
-          columns: [] // Empty - user will configure
+          columns: seatCol ? [seatCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "passenger_name", 
-          columns: [] 
+          columns: nameCol ? [nameCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "pnr", 
-          columns: [] 
+          columns: pnrCol ? [pnrCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "trips", 
-          columns: [] 
+          columns: tripsCol ? [tripsCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "spend", 
-          columns: [] 
+          columns: spendCol ? [spendCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "fare_type", 
-          columns: [] 
+          columns: fareCol ? [fareCol] : [] // ✅ Pre-fill if found
         },
         { 
           key: "status", 
-          columns: [] 
+          columns: statusCol ? [statusCol] : [] // ✅ Pre-fill if found
         },
       ],
     },
@@ -902,7 +931,6 @@ const getQueriesFromChartConfig = (configs: ChartConfig[]): Query[] => {
   log("✅ Final queries:", JSON.stringify(queries, null, 2));
   return queries;
 };
-
 
 // -------------------------------------------------------
 // INIT
