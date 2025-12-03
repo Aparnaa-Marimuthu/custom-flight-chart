@@ -558,13 +558,9 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
   });
 }
 
-// -------------------------------------------------------
-// ✅ DYNAMIC: BUILD SEAT DATA FROM THOUGHTSPOT SLOTS
-// -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-
-  log("📊 Reading data from ThoughtSpot context (slot‑driven)");
+  log("📊 Reading data from ThoughtSpot context (slot‑driven + static fallback)");
 
   try {
     const chartModel = ctx.getChartModel();
@@ -587,90 +583,65 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return seatMap;
     }
 
-    // 🔎 Structure debug
-    log("🔍 RAW DATA STRUCTURE:");
-    log("typeof dataPoints:", typeof dataPoints);
-    log("dataPoints keys:", Object.keys(dataPoints));
-    log("Is array?", Array.isArray(dataPoints));
-
-    if (dataPoints.dataValue) {
-      log(
-        "🔍 Found dataValue property! sample:",
-        dataPoints.dataValue.slice
-          ? dataPoints.dataValue.slice(0, 3)
-          : dataPoints.dataValue
-      );
-    }
-
-    if (columns.length > 0) {
-      log(
-        `📋 Columns (${columns.length}):`,
-        columns.map((c: any) => `${c.id} (${c.name})`)
-      );
-    }
-
-    // Use dataValue if present
     const actualData = dataPoints.dataValue || dataPoints;
     if (!Array.isArray(actualData)) {
       log("❌ Data is not an array, cannot process");
-      log("Data type:", typeof actualData);
-      log("Data keys:", Object.keys(actualData));
       return seatMap;
     }
 
     log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
 
     // ---------------------------------------------------
-    // 1) Build slot → column index map from chart config
+    // 1) Try to build slot → column index map from config
     // ---------------------------------------------------
-    const modelAny = chartModel as any;
-    const configAny = modelAny.config;
-    const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
-
     const slotToColumnIndex: Record<string, number> = {};
+    try {
+      const modelAny = chartModel as any;
+      const configAny = modelAny.config;
+      const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
 
-    if (cfg?.dimensions) {
-      cfg.dimensions.forEach((dim: any) => {
-        // dim.key is your slot key: "seat", "passenger_name", "pnr", etc.
-        if (!dim.key || !dim.columns || !dim.columns.length) {
-          return;
-        }
-        const colId = dim.columns[0].id;
-        // find this column in the query result columns
-        const colIndex = columns.findIndex((c: any) => c.id === colId);
-        if (colIndex >= 0) {
-          slotToColumnIndex[dim.key] = colIndex;
-          log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
-        } else {
-          log(
-            `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
-          );
-        }
-      });
-    } else {
-      log("⚠️ No dimensions in chart config (slots not configured?)");
+      if (cfg?.dimensions) {
+        cfg.dimensions.forEach((dim: any) => {
+          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          const colId = dim.columns[0].id;
+          const colIndex = columns.findIndex((c: any) => c.id === colId);
+          if (colIndex >= 0) {
+            slotToColumnIndex[dim.key] = colIndex;
+            log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
+          } else {
+            log(
+              `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
+            );
+          }
+        });
+      } else {
+        log("⚠️ No dimensions in chart config (slots not configured?)");
+      }
+    } catch (e) {
+      log("⚠️ Error while building slot mapping, will fall back to static indexes:", e);
     }
 
     log("🔍 Final slot → column index mapping:", slotToColumnIndex);
 
+    const hasSeatSlotMapped = typeof slotToColumnIndex["seat"] === "number";
+
     // Helper: get value for a logical slot key from a row
-    const getVal = (rowData: any[], slotKey: string): string => {
+    const getValFromSlot = (rowData: any[], slotKey: string): string => {
       const idx = slotToColumnIndex[slotKey];
       if (idx === undefined || rowData[idx] === undefined) return "";
       return rowData[idx]?.toString() || "";
     };
 
     // ---------------------------------------------------
-    // 2) Iterate rows using the slot mapping
+    // 2) Iterate rows
+    //    If slot mapping works, use it.
+    //    Otherwise, fall back to known static indexes.
     // ---------------------------------------------------
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
         if (!row) continue;
 
-        log(`🔍 Row ${i}:`, row);
-
-        // Handle both array and object formats
         let rowData: any[];
         if (Array.isArray(row)) {
           rowData = row;
@@ -680,24 +651,43 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           continue;
         }
 
-        log(`🔍 Row ${i} values:`, rowData);
+        let seatKey = "";
+        let passengerName = "";
+        let pnr = "";
+        let statusStr = "";
+        let fareType = "";
+        let trips = 0;
+        let spend = 0;
 
-        const seatKeyRaw = getVal(rowData, "seat");
-        const seatKey = seatKeyRaw.trim();
-        if (!seatKey) {
-          log(`⚠️ Row ${i} has no seat key (slot "seat" not mapped or empty)`);
-          continue;
+        if (hasSeatSlotMapped) {
+          // ✅ Preferred: use slot mapping
+          seatKey = getValFromSlot(rowData, "seat").trim();
+          passengerName = getValFromSlot(rowData, "passenger_name") || "-";
+          pnr = getValFromSlot(rowData, "pnr") || "-";
+          statusStr = getValFromSlot(rowData, "status") || "Empty";
+          fareType = getValFromSlot(rowData, "fare_type") || "N/A";
+          const tripsStr = getValFromSlot(rowData, "trips") || "0";
+          const spendStr = getValFromSlot(rowData, "spend") || "0";
+          trips = parseInt(tripsStr, 10) || 0;
+          spend = parseFloat(spendStr) || 0;
+        } else {
+          // ⚠️ Fallback: static index mapping (your working version)
+          log("⚠️ Seat slot not mapped via config, using static index mapping for this row");
+          seatKey = rowData[1]?.toString().trim() || "";
+          passengerName = rowData[5]?.toString() || "-";
+          pnr = rowData[0]?.toString() || "-";
+          const tripsStr = rowData[3]?.toString() || "0";
+          const spendStr = rowData[4]?.toString() || "0";
+          trips = parseInt(tripsStr, 10) || 0;
+          spend = parseFloat(spendStr) || 0;
+          fareType = rowData[6]?.toString() || "N/A";
+          statusStr = rowData[2]?.toString() || "Empty";
         }
 
-        const passengerName = getVal(rowData, "passenger_name") || "-";
-        const pnr = getVal(rowData, "pnr") || "-";
-        const statusStr = getVal(rowData, "status") || "Empty";
-        const fareType = getVal(rowData, "fare_type") || "N/A";
-        const tripsStr = getVal(rowData, "trips") || "0";
-        const spendStr = getVal(rowData, "spend") || "0";
-
-        const trips = parseInt(tripsStr, 10) || 0;
-        const spend = parseFloat(spendStr) || 0;
+        if (!seatKey) {
+          log(`⚠️ Row ${i} has no seat key (after mapping)`);
+          continue;
+        }
 
         log(`✅ Extracted seat ${seatKey}: ${passengerName}, ${statusStr}`);
 
@@ -734,7 +724,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         )
       );
     } else {
-      log("⚠️ No seats were processed - check that Seat slot is mapped and Seat values match SVG ids");
+      log("⚠️ No seats were processed - check Seat slot / SVG ids");
     }
 
     return seatMap;
@@ -743,6 +733,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     return seatMap;
   }
 }
+
 
 
 // -------------------------------------------------------
