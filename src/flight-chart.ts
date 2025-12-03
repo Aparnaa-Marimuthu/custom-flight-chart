@@ -559,75 +559,58 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 }
 
 // -------------------------------------------------------
-// ✅ TYPESCRIPT-SAFE: BUILD SEAT DATA FROM THOUGHTSPOT
+// ✅ DYNAMIC: BUILD SEAT DATA FROM THOUGHTSPOT SLOTS
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
   
-  log("📊 Reading data from ThoughtSpot context");
-  
+  log("📊 Reading data from ThoughtSpot context (slot‑driven)");
+
   try {
     const chartModel = ctx.getChartModel();
-    
     if (!chartModel) {
       log("⚠️ No chart model");
       return seatMap;
     }
-    
+
     if (!chartModel.data || !chartModel.data[0]) {
       log("⚠️ No data in chart model");
       return seatMap;
     }
 
-    const queryData = chartModel.data[0];
-    const dataAny = queryData as any;
-    const dataPoints = dataAny.data;
-    const columns = dataAny.columns || [];
-    
+    const queryData = chartModel.data[0] as any;
+    const dataPoints = queryData.data;
+    const columns = queryData.columns || [];
+
     if (!dataPoints) {
       log("⚠️ No data points");
       return seatMap;
     }
 
-    // ✅ CRITICAL DEBUG: Show actual data structure
+    // 🔎 Structure debug
     log("🔍 RAW DATA STRUCTURE:");
     log("typeof dataPoints:", typeof dataPoints);
     log("dataPoints keys:", Object.keys(dataPoints));
     log("Is array?", Array.isArray(dataPoints));
-    
-    // ✅ Check if it's object with 'dataValue' property
+
     if (dataPoints.dataValue) {
-      log("🔍 Found dataValue property!");
-      log("dataValue type:", typeof dataPoints.dataValue);
-      log("dataValue sample:", dataPoints.dataValue.slice ? dataPoints.dataValue.slice(0, 3) : dataPoints.dataValue);
-    }
-    
-    // ✅ Log actual column IDs from data
-    if (dataPoints.columns) {
-      log("🔍 Data columns:", dataPoints.columns);
-    }
-    
-    // ✅ Log first few raw rows
-    if (Array.isArray(dataPoints)) {
-      log("🔍 First 3 rows (array format):", dataPoints.slice(0, 3));
-    } else if (dataPoints.dataValue && Array.isArray(dataPoints.dataValue)) {
-      log("🔍 First 3 rows (dataValue format):", dataPoints.dataValue.slice(0, 3));
+      log(
+        "🔍 Found dataValue property! sample:",
+        dataPoints.dataValue.slice
+          ? dataPoints.dataValue.slice(0, 3)
+          : dataPoints.dataValue
+      );
     }
 
-    // ✅ Get length safely
-    const dataLength = typeof dataPoints.length !== 'undefined' 
-      ? dataPoints.length 
-      : (dataPoints.dataValue?.length || Object.keys(dataPoints).length);
-    
-    log(`📦 Processing ${dataLength} rows from ThoughtSpot`);
-    
     if (columns.length > 0) {
-      log(`📋 Columns (${columns.length}):`, columns.map((c: any) => c.id || c.name));
+      log(
+        `📋 Columns (${columns.length}):`,
+        columns.map((c: any) => c.id || c.name)
+      );
     }
 
-    // ✅ Try to extract from dataValue if it exists
+    // Use dataValue if present
     const actualData = dataPoints.dataValue || dataPoints;
-    
     if (!Array.isArray(actualData)) {
       log("❌ Data is not an array, cannot process");
       log("Data type:", typeof actualData);
@@ -635,42 +618,80 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return seatMap;
     }
 
-    // ✅ Iterate through actual data
+    log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
+
+    // ---------------------------------------------------
+    // 1) Build slot → column index map from chart config
+    // ---------------------------------------------------
+    const modelAny = chartModel as any;
+    const configAny = modelAny.config;
+    const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
+
+    const slotToColumnIndex: Record<string, number> = {};
+
+    if (cfg?.dimensions) {
+      cfg.dimensions.forEach((dim: any, dimIdx: number) => {
+        // dim.key is the slot key from chartConfigEditorDefinition:
+        // "seat", "passenger_name", "pnr", "trips", "spend", "fare_type", "status"
+        if (dim.key && dim.columns && dim.columns.length > 0) {
+          slotToColumnIndex[dim.key] = dimIdx;
+          log(`🔍 Slot "${dim.key}" → column index ${dimIdx}`);
+        }
+      });
+    } else {
+      log("⚠️ No dimensions in chart config (slots not configured?)");
+    }
+
+    log("🔍 Final slot → column index mapping:", slotToColumnIndex);
+
+    // Helper: get value for a logical slot key from a row
+    const getVal = (rowData: any[], slotKey: string): string => {
+      const idx = slotToColumnIndex[slotKey];
+      if (idx === undefined || rowData[idx] === undefined) return "";
+      return rowData[idx]?.toString() || "";
+    };
+
+    // ---------------------------------------------------
+    // 2) Iterate rows using the slot mapping
+    // ---------------------------------------------------
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
-        
         if (!row) continue;
-        
+
         log(`🔍 Row ${i}:`, row);
-        
+
         // Handle both array and object formats
         let rowData: any[];
         if (Array.isArray(row)) {
           rowData = row;
-        } else if (typeof row === 'object') {
+        } else if (typeof row === "object") {
           rowData = Object.values(row);
         } else {
           continue;
         }
-        
+
         log(`🔍 Row ${i} values:`, rowData);
-        
-       const seatKey = rowData[1]?.toString().trim() || "";  
+
+        const seatKeyRaw = getVal(rowData, "seat");
+        const seatKey = seatKeyRaw.trim();
         if (!seatKey) {
           log(`⚠️ Row ${i} has no seat key`);
           continue;
         }
 
-        const passengerName = rowData[5]?.toString() || "-"; 
-        const pnr = rowData[0]?.toString() || "-";      
-        const trips = parseInt(rowData[3]?.toString() || "0", 10);  
-        const spend = parseFloat(rowData[4]?.toString() || "0");    
-        const fareType = rowData[6]?.toString() || "N/A";           
-        const statusStr = rowData[2]?.toString() || "Empty";        
-        
+        const passengerName = getVal(rowData, "passenger_name") || "-";
+        const pnr = getVal(rowData, "pnr") || "-";
+        const statusStr = getVal(rowData, "status") || "Empty";
+        const fareType = getVal(rowData, "fare_type") || "N/A";
+        const tripsStr = getVal(rowData, "trips") || "0";
+        const spendStr = getVal(rowData, "spend") || "0";
+
+        const trips = parseInt(tripsStr, 10) || 0;
+        const spend = parseFloat(spendStr) || 0;
+
         log(`✅ Extracted seat ${seatKey}: ${passengerName}, ${statusStr}`);
-        
+
         let status: SeatStatus;
         if (statusStr === "Empty") {
           status = "Empty";
@@ -683,35 +704,36 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         seatMap[seatKey] = {
           name: passengerName,
           travellerId: pnr,
-          trips: trips,
-          spend: spend,
+          trips,
+          spend,
           item: fareType,
-          status: status,
+          status,
         };
-        
       } catch (rowError) {
         log(`❌ Error processing row ${i}:`, rowError);
       }
     }
 
     log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
-    
+
     if (Object.keys(seatMap).length > 0) {
       const sampleSeats = Object.keys(seatMap).slice(0, 3);
-      log("📌 Sample seats:", sampleSeats.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
+      log(
+        "📌 Sample seats:",
+        sampleSeats.map(
+          (k) => `${k}: ${seatMap[k].name} (${seatMap[k].status})`
+        )
+      );
     } else {
-      log("⚠️ No seats were processed - check column mapping");
+      log("⚠️ No seats were processed - check column mapping in slots");
     }
-    
+
     return seatMap;
-    
   } catch (error) {
     log("❌ Error reading data from context:", error);
     return seatMap;
   }
 }
-
-
 
 // -------------------------------------------------------
 // RENDER - USES THOUGHTSPOT DATA
