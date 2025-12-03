@@ -2,6 +2,7 @@ import {
   type ChartConfig,
   type ChartModel,
   ChartToTSEvent,
+  ColumnType,
   type CustomChartContext,
   getChartContext,
   type Query,
@@ -869,38 +870,55 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   log("📋 getDefaultChartConfig called");
   log("📊 Available columns:", chartModel.columns);
 
-  // ✅ Return EMPTY slots - user must manually configure
+  const cols = chartModel.columns || [];
+  const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
+
+  // ✅ Auto-detect ONLY the Seat column (required for chart to work)
+  const findColumn = (keys: string[], list: any[]) => {
+    return list.find(col => 
+      keys.some(key => col.name.toLowerCase().includes(key.toLowerCase()))
+    );
+  };
+
+  const seatCol = findColumn(["seat", "seatnumber", "seat_number"], attributes);
+  
+  if (seatCol) {
+    log(`✅ Auto-detected Seat column: "${seatCol.name}"`);
+  } else {
+    log(`⚠️ No Seat column auto-detected - user must configure manually`);
+  }
+
   return [
     {
       key: "main",
       dimensions: [
         { 
           key: "seat", 
-          columns: []  // Empty - user must drag
+          columns: seatCol ? [seatCol] : []  // ✅ Pre-fill Seat (required)
         },
         { 
           key: "passenger_name", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
         { 
           key: "pnr", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
         { 
           key: "trips", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
         { 
           key: "spend", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
         { 
           key: "fare_type", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
         { 
           key: "status", 
-          columns: []  // Empty - user must drag
+          columns: []  // Empty - user configures
         },
       ],
     },
@@ -913,38 +931,21 @@ const getQueriesFromChartConfig = (
   chartModel: ChartModel
 ): Query[] => {
   log("🔍 getQueriesFromChartConfig called");
-  log("📋 Configs received:", JSON.stringify(configs, null, 2));
   
-  // Get max rows from visual properties (default 1000)
   const maxRows = (chartModel.visualProps as any)?.['max-rows'] || 1000;
-  log("📊 Max rows:", maxRows);
   
-  const queries = configs.map((config: ChartConfig): Query | null => {
-    // Build query by accumulating all dimension columns
+  const queries = configs.map((config: ChartConfig): Query => {
     const query = config.dimensions.reduce(
       (acc, dimension) => ({
         queryColumns: [...acc.queryColumns, ...(dimension.columns || [])],
-        queryParams: {
-          size: maxRows,
-        },
+        queryParams: { size: maxRows },
       }),
       { queryColumns: [] } as Query
     );
     
-    // ✅ FIX: If no columns configured, return null (don't send query to ThoughtSpot)
-    if (query.queryColumns.length === 0) {
-      log("⚠️ No columns configured - skipping query");
-      return null;
-    }
-    
     log(`📊 Query columns count: ${query.queryColumns.length}`);
-    log("📌 Query columns:", query.queryColumns.map((c: any) => c.name));
-    
     return query;
-  }).filter((q): q is Query => q !== null);  // ✅ Remove null queries
-  
-  log("✅ Final queries:", JSON.stringify(queries, null, 2));
-  log(`✅ Total valid queries: ${queries.length}`);
+  });
   
   return queries;
 };
