@@ -623,33 +623,36 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     // ---------------------------------------------------
     // 1) Build slot → column index map from chart config
     // ---------------------------------------------------
-    const modelAny = chartModel as any;
-    const configAny = modelAny.config;
-    const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
+      const modelAny = chartModel as any;
+      const configAny = modelAny.config;
+      const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
 
-    const slotToColumnIndex: Record<string, number> = {};
+      const slotToColumnIndex: Record<string, number> = {};
 
-    if (cfg?.dimensions) {
-      cfg.dimensions.forEach((dim: any, dimIdx: number) => {
-        // dim.key is the slot key from chartConfigEditorDefinition:
-        // "seat", "passenger_name", "pnr", "trips", "spend", "fare_type", "status"
-        if (dim.key && dim.columns && dim.columns.length > 0) {
-          slotToColumnIndex[dim.key] = dimIdx;
-          log(`🔍 Slot "${dim.key}" → column index ${dimIdx}`);
-        }
-      });
-    } else {
-      log("⚠️ No dimensions in chart config (slots not configured?)");
-    }
+      if (cfg?.dimensions) {
+        cfg.dimensions.forEach((dim: any) => {
+          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          const colId = dim.columns[0].id; // the actual column id used for this slot
 
-    log("🔍 Final slot → column index mapping:", slotToColumnIndex);
+          // Find that column in queryData.columns to get its index in each row
+          const colIndex = columns.findIndex((c: any) => c.id === colId);
+          if (colIndex >= 0) {
+            slotToColumnIndex[dim.key] = colIndex;
+            log(`🔍 Slot "${dim.key}" → column index ${colIndex}`);
+          } else {
+            log(`⚠️ Could not find column for slot "${dim.key}" with id ${colId}`);
+          }
+        });
+      }
 
-    // Helper: get value for a logical slot key from a row
-    const getVal = (rowData: any[], slotKey: string): string => {
-      const idx = slotToColumnIndex[slotKey];
-      if (idx === undefined || rowData[idx] === undefined) return "";
-      return rowData[idx]?.toString() || "";
-    };
+      log("🔍 Final slot → column index mapping:", slotToColumnIndex);
+
+      const getVal = (rowData: any[], slotKey: string): string => {
+        const idx = slotToColumnIndex[slotKey];
+        if (idx === undefined || rowData[idx] === undefined) return "";
+        return rowData[idx]?.toString() || "";
+      };
+
 
     // ---------------------------------------------------
     // 2) Iterate rows using the slot mapping
