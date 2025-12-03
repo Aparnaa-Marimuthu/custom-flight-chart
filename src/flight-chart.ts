@@ -503,6 +503,7 @@ async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
 function attachInteractivity(container: HTMLElement, seatData: any) {
   container.addEventListener("click", (ev: MouseEvent) => {
     const seatKey = resolveSeatKey(ev.target as Element, seatData);
+
     if (!seatKey) {
       hideTooltip();
       return;
@@ -512,71 +513,57 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
     if (!seatEl) return;
 
     const info = seatData[seatKey];
+
     const bbox = (seatEl as any).getBoundingClientRect();
     const x = bbox.left + bbox.width / 2;
     const y = bbox.top - 10;
 
-    const statusText =
-      info.status === "Frequent Traveller" ? "Repeated Customer" : info.status;
+    const statusText = info.status === "Frequent Traveller"
+      ? "Repeated Customer"
+      : info.status;
 
     const statusColor =
-      info.status === "Frequent Traveller"
-        ? "#ff9933"
-        : info.status === "Occupied"
-        ? "#4da6ff"
-        : "#cccccc";
+      info.status === "Frequent Traveller" ? "#ff9933" :
+      info.status === "Occupied" ? "#4da6ff" :
+      "#cccccc";
 
-    const nameLine = info.name
-      ? `
+    const nameLine = info.name ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Passenger:</span>
         <span class="tooltip-value">${info.name}</span>
-      </div>`
-      : "";
+      </div>` : "";
 
-    const pnrLine = info.travellerId
-      ? `
+    const pnrLine = info.travellerId ? `
       <div class="tooltip-row">
         <span class="tooltip-label">PNR:</span>
         <span class="tooltip-value">${info.travellerId}</span>
-      </div>`
-      : "";
+      </div>` : "";
 
-    const tripsLine =
-      typeof info.trips === "number"
-        ? `
+    const tripsLine = typeof info.trips === "number" ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Trips (last 12 months):</span>
         <span class="tooltip-value">${info.trips}</span>
-      </div>`
-        : "";
+      </div>` : "";
 
-    const spendLine =
-      typeof info.spend === "number"
-        ? `
+    const spendLine = typeof info.spend === "number" ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Total spend:</span>
         <span class="tooltip-value">$${Number(info.spend).toFixed(2)}</span>
-      </div>`
-        : "";
+      </div>` : "";
 
-    const fareLine = info.item
-      ? `
+    const fareLine = info.item ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Fare type:</span>
         <span class="tooltip-value">${info.item}</span>
-      </div>`
-      : "";
+      </div>` : "";
 
-    const statusLine = info.status
-      ? `
+    const statusLine = info.status ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Status:</span>
         <span class="tooltip-value" style="color:${statusColor};font-weight:600;">
           ${statusText}
         </span>
-      </div>`
-      : "";
+      </div>` : "";
 
     showTooltip(
       `
@@ -594,135 +581,196 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
   });
 }
 
-
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 Reading data from ThoughtSpot context (pure slot‑driven)");
+  log("📊 Reading data from ThoughtSpot context (slot‑driven + static fallback)");
 
-  const chartModel = ctx.getChartModel();
-  if (!chartModel?.data?.[0]) {
-    log("⚠️ No data in chart model");
-    return seatMap;
-  }
-
-  const queryData = chartModel.data[0] as any;
-  const dataPoints = queryData.data;
-  const columns = queryData.columns || [];
-
-  if (!dataPoints) {
-    log("⚠️ No data points");
-    return seatMap;
-  }
-
-  const actualData = dataPoints.dataValue || dataPoints;
-  if (!Array.isArray(actualData)) {
-    log("❌ Data is not an array, cannot process");
-    return seatMap;
-  }
-
-  // ---------------------------------------------------
-  // 1) Build slot → column index map from config
-  // ---------------------------------------------------
-  const slotToColumnIndex: Record<string, number> = {};
-  const modelAny = chartModel as any;
-  const cfgArr = modelAny.config as any[] | undefined;
-  const cfg = Array.isArray(cfgArr) ? cfgArr[0] : undefined;
-
-  if (cfg?.dimensions) {
-    cfg.dimensions.forEach((dim: any) => {
-      if (!dim.key || !dim.columns || !dim.columns.length) return;
-      const colId = dim.columns[0].id;
-      const colIndex = columns.findIndex((c: any) => c.id === colId);
-      if (colIndex >= 0) {
-        slotToColumnIndex[dim.key] = colIndex;
-        log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
-      } else {
-        log(`⚠️ Slot "${dim.key}" column id ${colId} not found in queryData.columns`);
-      }
-    });
-  } else {
-    log("⚠️ No dimensions in chart config (slots not configured?)");
-  }
-
-  log("🔍 Final slot → column index mapping:", slotToColumnIndex);
-
-  const seatIdx = slotToColumnIndex["seat"];
-  if (typeof seatIdx !== "number") {
-    log("⚠️ Seat slot not mapped – cannot build seat data");
-    return seatMap;
-  }
-
-  const getVal = (rowData: any[], idx: number | undefined): string | undefined => {
-    if (idx === undefined) return undefined;
-    const v = rowData[idx];
-    return v === null || v === undefined ? undefined : v.toString();
-  };
-
-  // ---------------------------------------------------
-  // 2) Iterate rows using ONLY slot mapping
-  // ---------------------------------------------------
-  for (let i = 0; i < actualData.length; i++) {
-    try {
-      const row = actualData[i];
-      if (!row) continue;
-
-      const rowData: any[] = Array.isArray(row)
-        ? row
-        : typeof row === "object"
-        ? Object.values(row)
-        : [];
-
-      if (!rowData.length) continue;
-
-      const seatKeyRaw = getVal(rowData, seatIdx);
-      const seatKey = seatKeyRaw?.trim() || "";
-      if (!seatKey) {
-        log(`⚠️ Row ${i} has no seat key (after mapping)`);
-        continue;
-      }
-
-      const nameIdx = slotToColumnIndex["passenger_name"];
-      const pnrIdx = slotToColumnIndex["pnr"];
-      const statusIdx = slotToColumnIndex["status"];
-      const tripsIdx = slotToColumnIndex["trips"];
-      const spendIdx = slotToColumnIndex["spend"];
-      const fareIdx = slotToColumnIndex["fare_type"];
-
-      const passengerName = getVal(rowData, nameIdx);
-      const pnr = getVal(rowData, pnrIdx);
-      const statusStr = getVal(rowData, statusIdx);
-      const tripsStr = getVal(rowData, tripsIdx);
-      const spendStr = getVal(rowData, spendIdx);
-      const fareType = getVal(rowData, fareIdx);
-
-      const trips =
-        tripsStr !== undefined && tripsStr !== "" ? parseInt(tripsStr, 10) || 0 : undefined;
-      const spend =
-        spendStr !== undefined && spendStr !== "" ? parseFloat(spendStr) || 0 : undefined;
-
-      let status: SeatStatus | undefined;
-      if (statusStr === "Empty") status = "Empty";
-      else if (statusStr === "Repeated Customer") status = "Frequent Traveller";
-      else if (statusStr === "Occupied") status = "Occupied";
-      // if statusStr is undefined or some other value, leave status undefined
-
-      seatMap[seatKey] = {
-        name: passengerName,
-        travellerId: pnr,
-        trips,
-        spend,
-        item: fareType,
-        status, // undefined if Status slot not mapped
-      };
-    } catch (e) {
-      log(`❌ Error processing row ${i}:`, e);
+  try {
+    const chartModel = ctx.getChartModel();
+    if (!chartModel) {
+      log("⚠️ No chart model");
+      return seatMap;
     }
+
+    if (!chartModel.data || !chartModel.data[0]) {
+      log("⚠️ No data in chart model");
+      return seatMap;
+    }
+
+    const queryData = chartModel.data[0] as any;
+    const dataPoints = queryData.data;
+    const columns = queryData.columns || [];
+
+    if (!dataPoints) {
+      log("⚠️ No data points");
+      return seatMap;
+    }
+
+    const actualData = dataPoints.dataValue || dataPoints;
+    if (!Array.isArray(actualData)) {
+      log("❌ Data is not an array, cannot process");
+      return seatMap;
+    }
+
+    log(`📦 Processing ${actualData.length} rows from ThoughtSpot`);
+
+    // ---------------------------------------------------
+    // 1) Try to build slot → column index map from config
+    // ---------------------------------------------------
+    const slotToColumnIndex: Record<string, number> = {};
+    try {
+      const modelAny = chartModel as any;
+      const configAny = modelAny.config;
+      const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
+
+      if (cfg?.dimensions) {
+        cfg.dimensions.forEach((dim: any) => {
+          if (!dim.key || !dim.columns || !dim.columns.length) return;
+          const colId = dim.columns[0].id;
+          const colIndex = columns.findIndex((c: any) => c.id === colId);
+          if (colIndex >= 0) {
+            slotToColumnIndex[dim.key] = colIndex;
+            log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
+          } else {
+            log(
+              `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
+            );
+          }
+        });
+      } else {
+        log("⚠️ No dimensions in chart config (slots not configured?)");
+      }
+    } catch (e) {
+      log("⚠️ Error while building slot mapping, will fall back to static indexes:", e);
+    }
+
+    log("🔍 Final slot → column index mapping:", slotToColumnIndex);
+
+    const hasSeatSlotMapped = typeof slotToColumnIndex["seat"] === "number";
+
+    // Helper: get value for a logical slot key from a row
+    const getValFromSlot = (rowData: any[], slotKey: string): string => {
+      const idx = slotToColumnIndex[slotKey];
+      if (idx === undefined || rowData[idx] === undefined) return "";
+      return rowData[idx]?.toString() || "";
+    };
+
+    // ---------------------------------------------------
+    // 2) Iterate rows
+    //    If slot mapping works, use it.
+    //    Otherwise, fall back to known static indexes.
+    // ---------------------------------------------------
+    for (let i = 0; i < actualData.length; i++) {
+      try {
+        const row = actualData[i];
+        if (!row) continue;
+
+        let rowData: any[];
+        if (Array.isArray(row)) {
+          rowData = row;
+        } else if (typeof row === "object") {
+          rowData = Object.values(row);
+        } else {
+          continue;
+        }
+
+        let seatKey = "";
+        let passengerName: string | undefined;
+        let pnr: string | undefined;
+        let statusStr: string | undefined;
+        let fareType: string | undefined;
+        let trips: number | undefined;
+        let spend: number | undefined;
+
+        if (hasSeatSlotMapped) {
+          // Preferred: use slot mapping, but only if slot exists
+          seatKey = getValFromSlot(rowData, "seat").trim();
+          passengerName = slotToColumnIndex["passenger_name"] !== undefined
+            ? getValFromSlot(rowData, "passenger_name") || undefined
+            : undefined;
+          pnr = slotToColumnIndex["pnr"] !== undefined
+            ? getValFromSlot(rowData, "pnr") || undefined
+            : undefined;
+          statusStr = slotToColumnIndex["status"] !== undefined
+            ? getValFromSlot(rowData, "status") || undefined
+            : undefined;
+          fareType = slotToColumnIndex["fare_type"] !== undefined
+            ? getValFromSlot(rowData, "fare_type") || undefined
+            : undefined;
+          if (slotToColumnIndex["trips"] !== undefined) {
+            const tripsStr = getValFromSlot(rowData, "trips");
+            trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          }
+          if (slotToColumnIndex["spend"] !== undefined) {
+            const spendStr = getValFromSlot(rowData, "spend");
+            spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          }
+        } else {
+          // Fallback: static index mapping (your original)
+          log("⚠️ Seat slot not mapped via config, using static index mapping for this row");
+          seatKey = rowData[1]?.toString().trim() || "";
+          passengerName = rowData[5]?.toString() || undefined;
+          pnr = rowData[0]?.toString() || undefined;
+          const tripsStr = rowData[3]?.toString() || "";
+          const spendStr = rowData[4]?.toString() || "";
+          trips = tripsStr ? parseInt(tripsStr, 10) || 0 : undefined;
+          spend = spendStr ? parseFloat(spendStr) || 0 : undefined;
+          fareType = rowData[6]?.toString() || undefined;
+          statusStr = rowData[2]?.toString() || undefined;
+        }
+
+        if (!seatKey) {
+          log(`⚠️ Row ${i} has no seat key (after mapping)`);
+          continue;
+        }
+
+        log(`✅ Extracted seat ${seatKey}: ${passengerName ?? "-"}, ${statusStr ?? "-"}`);
+
+        let status: SeatStatus | undefined;
+        if (statusStr === "Empty") {
+          status = "Empty";
+        } else if (statusStr === "Repeated Customer") {
+          status = "Frequent Traveller";
+        } else if (statusStr === "Occupied") {
+          status = "Occupied";
+        } else {
+          status = undefined; // no status slot or unknown value
+        }
+
+        seatMap[seatKey] = {
+          name: passengerName,
+          travellerId: pnr,
+          trips,
+          spend,
+          item: fareType,
+          status, // may be undefined if Status slot not mapped
+        };
+
+      } catch (rowError) {
+        log(`❌ Error processing row ${i}:`, rowError);
+      }
+    }
+
+    log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
+
+    if (Object.keys(seatMap).length > 0) {
+      const sampleSeats = Object.keys(seatMap).slice(0, 3);
+      log(
+        "📌 Sample seats:",
+        sampleSeats.map(
+          (k) => `${k}: ${seatMap[k].name} (${seatMap[k].status})`
+        )
+      );
+    } else {
+      log("⚠️ No seats were processed - check Seat slot / SVG ids");
+    }
+
+    return seatMap;
+  } catch (error) {
+    log("❌ Error reading data from context:", error);
+    return seatMap;
   }
-
-  log("✅ Processed seats from ThoughtSpot:", Object.keys(seatMap).length);
-  return seatMap;
 }
-
 
 
 
