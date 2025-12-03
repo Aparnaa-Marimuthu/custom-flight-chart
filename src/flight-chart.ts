@@ -605,8 +605,14 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return seatMap;
     }
 
-    const queryData = chartModel.data[0] as any;
+    const queryData = chartModel.data.reduce((prev: any, curr: any) => {
+    const prevCols = prev?.data?.columns?.length || 0;
+    const currCols = curr?.data?.columns?.length || 0;
+    return currCols > prevCols ? curr : prev;
+    }, chartModel.data[0]) as any;
+
     log("📊 Query data:", queryData);
+    log("📊 Using query with", queryData.data?.columns?.length || 0, "columns");
     
     const dataPoints = queryData.data;
     const columns = dataPoints?.columns || queryData.columns || [];
