@@ -705,7 +705,7 @@ for (let i = 0; i < actualData.length; i++) {
       else status = undefined;
     } else {
       status = undefined;
-      
+
     }
 
     const fareType =
@@ -799,34 +799,13 @@ const getFixedChartConfig = (chartModel: ChartModel): ChartConfig[] => {
     {
       key: "main",
       dimensions: [
-        { 
-          key: "seat", 
-          columns: attributes.length > 0 ? [attributes[0]] : [] 
-        },
-        { 
-          key: "passenger_name", 
-          columns: attributes.length > 1 ? [attributes[1]] : [] 
-        },
-        { 
-          key: "pnr", 
-          columns: attributes.length > 2 ? [attributes[2]] : [] 
-        },
-        { 
-          key: "trips", 
-          columns: measures.length > 0 ? [measures[0]] : [] 
-        },
-        { 
-          key: "spend", 
-          columns: measures.length > 1 ? [measures[1]] : [] 
-        },
-        { 
-          key: "fare_type", 
-          columns: attributes.length > 3 ? [attributes[3]] : [] 
-        },
-        { 
-          key: "status", 
-          columns: attributes.length > 4 ? [attributes[4]] : [] 
-        },
+        { key: "seat", columns: [] },
+        { key: "passenger_name", columns: [] },
+        { key: "pnr", columns: [] },
+        { key: "trips", columns: [] },
+        { key: "spend", columns: [] },
+        { key: "fare_type", columns: [] },
+        { key: "status", columns: [] },
       ],
     },
   ];
