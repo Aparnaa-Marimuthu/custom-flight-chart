@@ -563,7 +563,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  
+
   log("📊 Reading data from ThoughtSpot context (slot‑driven)");
 
   try {
@@ -605,7 +605,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     if (columns.length > 0) {
       log(
         `📋 Columns (${columns.length}):`,
-        columns.map((c: any) => c.id || c.name)
+        columns.map((c: any) => `${c.id} (${c.name})`)
       );
     }
 
@@ -623,36 +623,42 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     // ---------------------------------------------------
     // 1) Build slot → column index map from chart config
     // ---------------------------------------------------
-      const modelAny = chartModel as any;
-      const configAny = modelAny.config;
-      const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
+    const modelAny = chartModel as any;
+    const configAny = modelAny.config;
+    const cfg = Array.isArray(configAny) ? configAny[0] : undefined;
 
-      const slotToColumnIndex: Record<string, number> = {};
+    const slotToColumnIndex: Record<string, number> = {};
 
-      if (cfg?.dimensions) {
-        cfg.dimensions.forEach((dim: any) => {
-          if (!dim.key || !dim.columns || !dim.columns.length) return;
-          const colId = dim.columns[0].id; // the actual column id used for this slot
+    if (cfg?.dimensions) {
+      cfg.dimensions.forEach((dim: any) => {
+        // dim.key is your slot key: "seat", "passenger_name", "pnr", etc.
+        if (!dim.key || !dim.columns || !dim.columns.length) {
+          return;
+        }
+        const colId = dim.columns[0].id;
+        // find this column in the query result columns
+        const colIndex = columns.findIndex((c: any) => c.id === colId);
+        if (colIndex >= 0) {
+          slotToColumnIndex[dim.key] = colIndex;
+          log(`🔍 Slot "${dim.key}" → column index ${colIndex} (id: ${colId})`);
+        } else {
+          log(
+            `⚠️ Could not find column for slot "${dim.key}" with id ${colId} in queryData.columns`
+          );
+        }
+      });
+    } else {
+      log("⚠️ No dimensions in chart config (slots not configured?)");
+    }
 
-          // Find that column in queryData.columns to get its index in each row
-          const colIndex = columns.findIndex((c: any) => c.id === colId);
-          if (colIndex >= 0) {
-            slotToColumnIndex[dim.key] = colIndex;
-            log(`🔍 Slot "${dim.key}" → column index ${colIndex}`);
-          } else {
-            log(`⚠️ Could not find column for slot "${dim.key}" with id ${colId}`);
-          }
-        });
-      }
+    log("🔍 Final slot → column index mapping:", slotToColumnIndex);
 
-      log("🔍 Final slot → column index mapping:", slotToColumnIndex);
-
-      const getVal = (rowData: any[], slotKey: string): string => {
-        const idx = slotToColumnIndex[slotKey];
-        if (idx === undefined || rowData[idx] === undefined) return "";
-        return rowData[idx]?.toString() || "";
-      };
-
+    // Helper: get value for a logical slot key from a row
+    const getVal = (rowData: any[], slotKey: string): string => {
+      const idx = slotToColumnIndex[slotKey];
+      if (idx === undefined || rowData[idx] === undefined) return "";
+      return rowData[idx]?.toString() || "";
+    };
 
     // ---------------------------------------------------
     // 2) Iterate rows using the slot mapping
@@ -679,7 +685,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         const seatKeyRaw = getVal(rowData, "seat");
         const seatKey = seatKeyRaw.trim();
         if (!seatKey) {
-          log(`⚠️ Row ${i} has no seat key`);
+          log(`⚠️ Row ${i} has no seat key (slot "seat" not mapped or empty)`);
           continue;
         }
 
@@ -728,7 +734,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         )
       );
     } else {
-      log("⚠️ No seats were processed - check column mapping in slots");
+      log("⚠️ No seats were processed - check that Seat slot is mapped and Seat values match SVG ids");
     }
 
     return seatMap;
@@ -737,6 +743,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     return seatMap;
   }
 }
+
 
 // -------------------------------------------------------
 // RENDER - USES THOUGHTSPOT DATA
