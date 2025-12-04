@@ -693,11 +693,16 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
           ]
         };
         
-        // Tell ThoughtSpot to show its context menu
-        chartContext.emitEvent(ChartToTSEvent.OpenContextMenu, {
-          clickedPoint: clickedPoint,
-          event: ev
-        });
+        const eventPayload = {
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+      };
+
+      // Correct emitEvent call
+      chartContext.emitEvent(ChartToTSEvent.OpenContextMenu, {
+        clickedPoint,
+        event: eventPayload
+      });
         
         log(` Context menu triggered for ${info.status} seat: ${seatKey}`);
         
