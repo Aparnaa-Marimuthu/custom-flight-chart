@@ -233,11 +233,11 @@ function createZoomControls(container: HTMLElement) {
 function colorForStatus(status?: SeatStatus): string {
   switch (status) {
     case "Frequent Traveller":
-      return "#ff9933"; // orange
+      return "#ff9933";
     case "Occupied":
-      return "#4da6ff"; // blue
+      return "#4da6ff"; 
     case "Empty":
-      return "#cccccc"; // grey
+      return "#cccccc";
     default:
       return "#cccccc";
   }
@@ -502,22 +502,48 @@ async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
 // -------------------------------------------------------
 function attachInteractivity(container: HTMLElement, seatData: any) {
   container.addEventListener("click", (ev: MouseEvent) => {
-    const seatKey = resolveSeatKey(ev.target as Element, seatData);
-
-    if (!seatKey) {
+    let clickedElement = ev.target as Element;
+    
+    // Find the seat group (g element with id)
+    while (clickedElement && clickedElement !== container) {
+      if (clickedElement.id && (clickedElement.id.includes('seat') || /^[A-Z0-9]+$/.test(clickedElement.id))) {
+        break;
+      }
+      clickedElement = clickedElement.parentElement as Element;
+    }
+    
+    if (!clickedElement || !clickedElement.id || clickedElement === container) {
       hideTooltip();
       return;
     }
-
-    const seatEl = findSeatDom(container, seatKey);
-    if (!seatEl) return;
-
-    const info = seatData[seatKey];
-
-    const bbox = (seatEl as any).getBoundingClientRect();
+    
+    // Extract seat number from ID
+    const seatNumber = clickedElement.id.replace(/^seat_/, "");
+    
+    // Check if we have data for this seat
+    const seatKey = resolveSeatKey(clickedElement, seatData);
+    const info = seatKey ? seatData[seatKey] : null;
+    
+    const bbox = (clickedElement as any).getBoundingClientRect();
     const x = bbox.left + bbox.width / 2;
     const y = bbox.top - 10;
-
+    
+    // If no data OR status is Empty, show simple Empty tooltip
+    if (!info || info.status === "Empty") {
+      showTooltip(
+        `
+        <strong>Seat: ${seatNumber}</strong>
+        <div class="tooltip-row">
+          <span class="tooltip-label">Status:</span>
+          <span class="tooltip-value" style="color:#cccccc;font-weight:600;">Empty</span>
+        </div>
+        `,
+        x,
+        y
+      );
+      return;
+    }
+    
     const statusText = info.status === "Frequent Traveller"
       ? "Repeated Customer"
       : info.status;
@@ -539,13 +565,13 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
         <span class="tooltip-value">${info.travellerId}</span>
       </div>` : "";
 
-    const tripsLine = typeof info.trips === "number" ? `
+    const tripsLine = typeof info.trips === "number" && info.trips > 0 ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Trips (last 12 months):</span>
         <span class="tooltip-value">${info.trips}</span>
       </div>` : "";
 
-    const spendLine = typeof info.spend === "number" ? `
+    const spendLine = typeof info.spend === "number" && info.spend > 0 ? `
       <div class="tooltip-row">
         <span class="tooltip-label">Total spend:</span>
         <span class="tooltip-value">$${Number(info.spend).toFixed(2)}</span>
@@ -567,7 +593,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
     showTooltip(
       `
-      <strong>Seat: ${seatKey}</strong>
+      <strong>Seat: ${seatNumber}</strong>
       ${nameLine}
       ${pnrLine}
       ${tripsLine}
@@ -582,26 +608,19 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 }
 
 // -------------------------------------------------------
-// ✅ FIXED: NAME-BASED DATA EXTRACTION (like reference code)
+// NAME-BASED DATA EXTRACTION
 // -------------------------------------------------------
 function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> {
   const seatMap: Record<string, any> = {};
-  log("📊 buildSeatDataFromContext called");
 
   try {
     const chartModel = ctx.getChartModel();
-    log("🔍 Chart model:", chartModel);
     
     if (!chartModel) {
-      log("❌ No chart model available");
       return seatMap;
     }
-
-    log("📦 Chart model data:", chartModel.data);
-    log("⚙️ Chart model config:", chartModel.config);
     
     if (!chartModel?.data?.[0]) {
-      log("❌ No chart data available at chartModel.data[0]");
       return seatMap;
     }
 
@@ -610,81 +629,59 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
     const currCols = curr?.data?.columns?.length || 0;
     return currCols > prevCols ? curr : prev;
     }, chartModel.data[0]) as any;
-
-    log("📊 Query data:", queryData);
-    log("📊 Using query with", queryData.data?.columns?.length || 0, "columns");
     
     const dataPoints = queryData.data;
     const columns = dataPoints?.columns || queryData.columns || [];
 
-    log("📌 Columns from queryData:", columns);
-    log("📊 Data points:", dataPoints);
-
     if (!dataPoints) {
-      log("❌ No data points in queryData");
       return seatMap;
     }
 
     const actualData = dataPoints.dataValue || dataPoints;
-    log("📦 Actual data type:", Array.isArray(actualData) ? "Array" : typeof actualData);
-    log("📊 Actual data length:", Array.isArray(actualData) ? actualData.length : "N/A");
     
     if (!Array.isArray(actualData)) {
-      log("❌ Data is not an array, cannot process");
       return seatMap;
     }
 
-    log(`✅ Processing ${actualData.length} rows`);
-
-    // ✅ BUILD SLOT → COLUMN NAME MAPPING
+    // BUILD SLOT → COLUMN NAME MAPPING
     const slotToColumnName: Record<string, string> = {};
     
     try {
       const modelAny = chartModel as any;
       const configAny = modelAny.config;
-      log("🔍 Config from model:", configAny);
       
-      // ✅ DEBUG: Log ALL configs
       let cfg;
       if (configAny?.chartConfig && Array.isArray(configAny.chartConfig)) {
-        log(`🔍 Total configs available: ${configAny.chartConfig.length}`);
         
         configAny.chartConfig.forEach((c: any, idx: number) => {
           const filled = c?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
-          log(`🔍 Config[${idx}]: ${filled} filled dimensions`);
-          log(`🔍 Config[${idx}] dimensions:`, c?.dimensions);
+          log(` Config[${idx}]: ${filled} filled dimensions`);
+          log(` Config[${idx}] dimensions:`, c?.dimensions);
         });
         
-        // ✅ Pick the config with MOST filled dimensions
+        // Pick the config with MOST filled dimensions
         cfg = configAny.chartConfig.reduce((prev: any, curr: any) => {
           const prevFilled = prev?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
           const currFilled = curr?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
-          log(`🔍 Comparing: prev=${prevFilled} vs curr=${currFilled}`);
           return currFilled > prevFilled ? curr : prev;
         }, configAny.chartConfig[0]);
         
         const filledCount = cfg?.dimensions?.filter((d: any) => d.columns?.length > 0).length || 0;
-        log(`✅ Selected config with ${filledCount} filled dimensions`);
+        log(` Selected config with ${filledCount} filled dimensions`);
       }
-      
-      log("🔍 First config object:", cfg);
 
       if (cfg?.dimensions) {
-        log("📋 Dimensions found:", cfg.dimensions);
         
-        // ✅ FIX #2: Match column IDs correctly
+        // Match column IDs correctly
         cfg.dimensions.forEach((dim: any) => {
-          log(`🔍 Processing dimension: ${dim.key}`, dim);
           
           if (!dim.key || !dim.columns || !dim.columns.length) {
-            log(`⚠️ Dimension "${dim.key}" has no columns assigned`);
             return;
           }
           
           const columnId = dim.columns[0].id;
-          log(`🔍 Looking for column with id: ${columnId}`);
           
-          // ✅ columns array contains ID strings, match directly
+          // columns array contains ID strings, match directly
           const matchedId = columns.find((c: any) => c === columnId);
           
           if (matchedId) {
@@ -693,33 +690,28 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
             
             if (columnInfo) {
               slotToColumnName[dim.key] = columnInfo.name;
-              log(`✅ Slot "${dim.key}" → column "${columnInfo.name}"`);
+              log(` Slot "${dim.key}" → column "${columnInfo.name}"`);
             } else {
-              log(`❌ Could not find column info for id ${matchedId}`);
+              log(` Could not find column info for id ${matchedId}`);
             }
           } else {
-            log(`❌ Column id ${columnId} not in data columns array`);
+            log(` Column id ${columnId} not in data columns array`);
           }
         });
       } else {
-        log("⚠️ No dimensions in config");
+        log(" No dimensions in config");
       }
     } catch (e) {
-      log("❌ Error building slot mapping:", e);
+      log(" Error building slot mapping:", e);
       console.error("Stack trace:", e);
     }
 
-    log("🗺️ Final slot → column mapping:", slotToColumnName);
-
-    // ✅ CHECK IF SEAT SLOT IS MAPPED
+    // CHECK IF SEAT SLOT IS MAPPED
     if (!slotToColumnName["seat"]) {
-      log("❌ CRITICAL: Seat slot not configured! User must drag a column to the Seat slot.");
       return seatMap;
     }
 
-    log("✅ Seat slot is mapped to:", slotToColumnName["seat"]);
-
-    // ✅ FIX #3: HELPER - GET DATA BY COLUMN NAME
+    // HELPER - GET DATA BY COLUMN NAME
     const getDataForColumn = (row: any, slotKey: string): any => {
   const columnName = slotToColumnName[slotKey];
   if (!columnName) {
@@ -728,10 +720,9 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 
   // Handle both array and object row formats
       if (Array.isArray(row)) {
-        // ✅ FIX: Find the column ID first, then its position in the data columns array
+        // Find the column ID first, then its position in the data columns array
         const columnInfo = chartModel.columns.find((c: any) => c.name === columnName);
         if (!columnInfo) {
-          log(`❌ Column "${columnName}" not found in chartModel.columns`);
           return undefined;
         }
         
@@ -739,15 +730,13 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         const colIndex = columns.findIndex((c: any) => c === columnInfo.id);
         
         if (colIndex < 0) {
-          log(`❌ Column ID "${columnInfo.id}" not found in data columns array`);
           return undefined;
         }
         
         const value = row[colIndex];
         
-        // Debug log for first row only
         if (row === actualData[0]) {
-          log(`🔍 Column "${columnName}" (id: ${columnInfo.id}) → index ${colIndex} → value: ${value}`);
+          log(` Column "${columnName}" (id: ${columnInfo.id}) → index ${colIndex} → value: ${value}`);
         }
         
         return value;
@@ -757,25 +746,22 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
       return undefined;
     };
 
-    // ✅ PROCESS ROWS
-    log("🔄 Starting row processing...");
-    
+    // PROCESS ROWS
     for (let i = 0; i < actualData.length; i++) {
       try {
         const row = actualData[i];
         if (!row) {
-          if (i < 3) log(`⚠️ Row ${i}: Empty row`);
+          if (i < 3)
           continue;
         }
 
-        // Log first 3 rows for debugging
         if (i < 3) {
-          log(`📊 Row ${i} sample:`, row);
+          log(` Row ${i} sample:`, row);
         }
 
         const seatKey = getDataForColumn(row, "seat")?.toString().trim();
         if (!seatKey) {
-          if (i < 3) log(`⚠️ Row ${i}: No seat value`);
+          if (i < 3)
           continue;
         }
 
@@ -790,7 +776,6 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         const spendRaw = getDataForColumn(row, "spend");
         const spend = spendRaw !== undefined ? parseFloat(String(spendRaw)) || 0 : undefined;
 
-        // Map status values
         let status: SeatStatus | undefined;
         if (statusStr === "Empty") {
           status = "Empty";
@@ -810,26 +795,24 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         };
 
         if (i < 3) {
-          log(`✅ Row ${i} → Seat ${seatKey}: ${passengerName || "-"}, ${statusStr || "-"}`);
+          log(` Row ${i} → Seat ${seatKey}: ${passengerName || "-"}, ${statusStr || "-"}`);
         }
 
       } catch (rowError) {
-        log(`❌ Error processing row ${i}:`, rowError);
+        log(` Error processing row ${i}:`, rowError);
       }
     }
 
-    log(`✅ Processed ${Object.keys(seatMap).length} seats total`);
-
     if (Object.keys(seatMap).length > 0) {
       const samples = Object.keys(seatMap).slice(0, 5);
-      log("📌 Sample seats:", samples.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
+      log(" Sample seats:", samples.map(k => `${k}: ${seatMap[k].name} (${seatMap[k].status})`));
     } else {
-      log("⚠️ WARNING: No seats were processed!");
+      log(" WARNING: No seats were processed!");
     }
 
     return seatMap;
   } catch (error) {
-    log("❌ FATAL ERROR in buildSeatDataFromContext:", error);
+    log(" FATAL ERROR in buildSeatDataFromContext:", error);
     console.error("Stack trace:", error);
     return seatMap;
   }
@@ -839,60 +822,45 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
 // RENDER - USES THOUGHTSPOT DATA
 // -------------------------------------------------------
 async function renderChart(ctx: CustomChartContext) {
-  log("🎨 ========== renderChart() START ==========");
-  log("📅 Timestamp:", new Date().toISOString());
   
   ctx.emitEvent(ChartToTSEvent.RenderStart);
-  log("✅ RenderStart event emitted");
 
   const dynamicSeatData = buildSeatDataFromContext(ctx);
-  log("📊 Seat data extracted, count:", Object.keys(dynamicSeatData).length);
 
   if (Object.keys(dynamicSeatData).length === 0) {
-    log("⚠️ No seat data to render - showing configuration message");
     const root = document.getElementById("flight-chart") || document.body;
     root.innerHTML = "<div style='padding:20px;text-align:center;font-family:sans-serif;'><h3>⚙️ Configuration Required</h3><p>Please drag columns to the Configure panel slots:</p><ul style='text-align:left;display:inline-block;'><li><strong>Seat</strong> (required)</li><li>Passenger Name</li><li>PNR / Stv ID</li><li>Status</li><li>Frequently Purchased Item</li><li>Trips</li><li>Spend</li></ul></div>";
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    log("✅ RenderComplete event emitted (no data)");
     return;
   }
 
-  log("🎨 Rendering SVG map...");
   const root =
     document.getElementById("flight-chart") ||
     (() => {
       const div = document.createElement("div");
       div.id = "flight-chart";
       document.body.appendChild(div);
-      log("📦 Created flight-chart div");
       return div;
     })();
 
   root.innerHTML = "";
-  log("🧹 Cleared existing content");
 
   await loadAndStyleSVG(root, dynamicSeatData);
-  log("✅ SVG loaded and styled");
   
   attachInteractivity(root, dynamicSeatData);
-  log("✅ Interactivity attached");
 
   ctx.emitEvent(ChartToTSEvent.RenderComplete);
-  log("✅ RenderComplete event emitted");
-  log("🎨 ========== renderChart() END ==========");
 }
 
 // -------------------------------------------------------
-// ✅ FIXED: LET USER CONFIGURE (don't pre-assign positions)
+// FIXED: LET USER CONFIGURE (don't pre-assign positions)
 // -------------------------------------------------------
 const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
-  log("📋 getDefaultChartConfig called");
-  log("📊 Available columns:", chartModel.columns);
 
   const cols = chartModel.columns || [];
   const attributes = cols.filter((c) => c.type === ColumnType.ATTRIBUTE);
 
-  // ✅ Auto-detect ONLY the Seat column (required for chart to work)
+  // Auto-detect ONLY the Seat column (required for chart to work)
   const findColumn = (keys: string[], list: any[]) => {
     return list.find(col => 
       keys.some(key => col.name.toLowerCase().includes(key.toLowerCase()))
@@ -902,9 +870,9 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
   const seatCol = findColumn(["seat", "seatnumber", "seat_number"], attributes);
   
   if (seatCol) {
-    log(`✅ Auto-detected Seat column: "${seatCol.name}"`);
+    log(` Auto-detected Seat column: "${seatCol.name}"`);
   } else {
-    log(`⚠️ No Seat column auto-detected - user must configure manually`);
+    log(` No Seat column auto-detected - user must configure manually`);
   }
 
   return [
@@ -913,31 +881,31 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
       dimensions: [
         { 
           key: "seat", 
-          columns: seatCol ? [seatCol] : []  // ✅ Pre-fill Seat (required)
+          columns: seatCol ? [seatCol] : []  
         },
         { 
           key: "passenger_name", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
         { 
           key: "pnr", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
         { 
           key: "trips", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
         { 
           key: "spend", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
         { 
           key: "frequently_purchased_item", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
         { 
           key: "status", 
-          columns: []  // Empty - user configures
+          columns: []  
         },
       ],
     },
@@ -949,7 +917,6 @@ const getQueriesFromChartConfig = (
   configs: ChartConfig[],
   chartModel: ChartModel
 ): Query[] => {
-  log("🔍 getQueriesFromChartConfig called");
   
   const maxRows = (chartModel.visualProps as any)?.['max-rows'] || 1000;
   
@@ -962,7 +929,6 @@ const getQueriesFromChartConfig = (
       { queryColumns: [] } as Query
     );
     
-    log(`📊 Query columns count: ${query.queryColumns.length}`);
     return query;
   });
   
@@ -973,11 +939,8 @@ const getQueriesFromChartConfig = (
 // INIT
 // -------------------------------------------------------
 (async () => {
-  log("🚀 ========== INITIALIZATION START ==========");
-  log("📅 Timestamp:", new Date().toISOString());
 
   try {
-    log("🔧 Calling getChartContext...");
     
     const ctx = await getChartContext({
       getDefaultChartConfig,
@@ -1038,68 +1001,49 @@ const getQueriesFromChartConfig = (
         }
       ]
     });
-
-    log("✅ Context created successfully");
-    log("🔍 Context object:", ctx);
     
     // Poll for data availability
     const checkAndRender = async () => {
       try {
-        log("🔍 Checking for data availability...");
         const chartModel = ctx.getChartModel();
-        log("📊 Chart model:", chartModel);
         
         const hasData = chartModel?.data?.[0]?.data;
-        log("📦 Has data?", !!hasData);
         
         if (hasData) {
-          log("✅ Data is available, calling renderChart...");
           await renderChart(ctx);
           return true;
         } else {
-          log("⏳ No data yet, will retry...");
           return false;
         }
       } catch (e) {
-        log("⚠️ Error checking for data:", e);
         console.error("Stack trace:", e);
         return false;
       }
     };
 
-    log("🔄 Attempting immediate render...");
     const rendered = await checkAndRender();
     
     if (!rendered) {
-      log("⏳ No immediate data, starting polling...");
       
       let attempts = 0;
       const maxAttempts = 15;
       
       const pollInterval = setInterval(async () => {
         attempts++;
-        log(`🔄 Poll attempt ${attempts}/${maxAttempts}`);
         
         const success = await checkAndRender();
         
         if (success) {
-          log("✅ Render successful, stopping poll");
           clearInterval(pollInterval);
         } else if (attempts >= maxAttempts) {
-          log("⏰ Max attempts reached, stopping poll");
-          log("⚠️ Please configure columns in the chart panel");
           clearInterval(pollInterval);
         }
       }, 2000);
     } else {
-      log("✅ Immediate render successful");
+      log(" Immediate render successful");
     }
-    
-    log("🚀 ========== INITIALIZATION COMPLETE ==========");
-    
+     
   } catch (err) {
-    log("❌ ========== FATAL ERROR DURING INIT ==========");
-    log("❌ Error:", err);
     console.error("Full error:", err);
     console.error("Stack trace:", err);
   }
