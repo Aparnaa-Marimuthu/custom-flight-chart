@@ -171,6 +171,11 @@ body, html {
 })();
 
 // -------------------------------------------------------
+// GLOBAL CHART CONTEXT FOR EVENT HANDLERS
+// -------------------------------------------------------
+let chartContext: CustomChartContext | null = null;
+
+// -------------------------------------------------------
 // TYPES
 // -------------------------------------------------------
 type SeatStatus = "Frequent Traveller" | "Occupied" | "Empty";
@@ -501,35 +506,35 @@ async function loadAndStyleSVG(container: HTMLElement, seatData: any) {
 // INTERACTIVITY
 // -------------------------------------------------------
 function attachInteractivity(container: HTMLElement, seatData: any) {
-  container.addEventListener("click", (ev: MouseEvent) => {
-    let clickedElement = ev.target as Element;
+  container.addEventListener("mousemove", (ev: MouseEvent) => {
+    let hoveredElement = ev.target as Element;
     
     // Find the seat group (g element with id)
-    while (clickedElement && clickedElement !== container) {
-      if (clickedElement.id && (clickedElement.id.includes('seat') || /^[A-Z0-9]+$/.test(clickedElement.id))) {
+    while (hoveredElement && hoveredElement !== container) {
+      if (hoveredElement.id && (hoveredElement.id.includes('seat') || /^[A-Z0-9]+$/.test(hoveredElement.id))) {
         break;
       }
-      clickedElement = clickedElement.parentElement as Element;
+      hoveredElement = hoveredElement.parentElement as Element;
     }
     
-    if (!clickedElement || !clickedElement.id || clickedElement === container) {
+    if (!hoveredElement || !hoveredElement.id || hoveredElement === container) {
       hideTooltip();
       return;
     }
     
     // Extract seat number from ID
-    const seatNumber = clickedElement.id.replace(/^seat_/, "");
+    const seatNumber = hoveredElement.id.replace(/^seat_/, "");
     
     // Check if we have data for this seat
-    const seatKey = resolveSeatKey(clickedElement, seatData);
+    const seatKey = resolveSeatKey(hoveredElement, seatData);
     const info = seatKey ? seatData[seatKey] : null;
     
-    const bbox = (clickedElement as any).getBoundingClientRect();
-    const x = bbox.left + bbox.width / 2;
-    const y = bbox.top - 10;
+    // Use cursor position for smooth following
+    const x = ev.clientX;
+    const y = ev.clientY;
     
     // If no data OR status is Empty, show simple Empty tooltip
-    if (!info || info.status === "Empty") {
+    if (!info || info.status?.toLowerCase() === "empty" || info.status?.toLowerCase() === "non booked") {
       showTooltip(
         `
         <strong>Seat: ${seatNumber}</strong>
@@ -604,6 +609,105 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
       x,
       y
     );
+  }, true); 
+
+  container.addEventListener("mouseleave", (_ev: MouseEvent) => {
+    hideTooltip();
+  }, true);
+
+  // RIGHT-CLICK EVENT - Shows ThoughtSpot Context Menu (only for Occupied/Frequent Traveller seats)
+  container.addEventListener("contextmenu", (ev: MouseEvent) => {
+    ev.preventDefault(); // Stop the browser's default right-click menu
+    
+    let clickedElement = ev.target as Element;
+    
+    // Find the seat group (same logic as click handler)
+    while (clickedElement && clickedElement !== container) {
+      if (clickedElement.id && (clickedElement.id.includes('seat') || /^[A-Z0-9]+$/.test(clickedElement.id))) {
+        break;
+      }
+      clickedElement = clickedElement.parentElement as Element;
+    }
+    
+    if (!clickedElement || !clickedElement.id || clickedElement === container) {
+      return;
+    }
+    
+    const seatNumber = clickedElement.id.replace(/^seat_/, "");
+    const seatKey = resolveSeatKey(clickedElement, seatData);
+    
+    // Check if seat has valid data
+    if (!seatKey || !seatData[seatKey]) {
+      log(` No data for seat: ${seatNumber}`);
+      return;
+    }
+    
+    const info = seatData[seatKey];
+    
+    // Only show context menu for Occupied or Frequent Traveller seats
+    if (!info.status || !info || info.status?.toLowerCase() === "empty" || info.status?.toLowerCase() === "non booked") {
+      log(` Seat ${seatNumber} is empty - no context menu`);
+      return;
+    }
+    
+    // Only proceed if seat is Occupied or Frequent Traveller
+    if (info.status !== "Occupied" && info.status !== "Frequent Traveller") {
+      log(` Seat ${seatNumber} status "${info.status}" - no context menu`);
+      return;
+    }
+    
+    // Show context menu only if chart context is available (in Liveboard view)
+    if (chartContext) {
+      try {
+        const chartModel = chartContext.getChartModel();
+        
+        if (!chartModel?.data?.[0]?.data?.columns) {
+          log(" No chart data available for context menu");
+          return;
+        }
+        
+        // Find the seat column ID from the chart config
+        const chartConfig = chartModel.config?.chartConfig?.[0];
+        const seatDimension = chartConfig?.dimensions?.find(
+          (dim: any) => dim.key === "seat"
+        );
+        
+        if (!seatDimension || !seatDimension.columns || !seatDimension.columns.length) {
+          log(" Seat column not configured");
+          return;
+        }
+        
+        // Get the actual seat column ID from the configuration
+        const seatColumnId = seatDimension.columns[0].id;
+        
+        log(` Context menu for seat ${seatKey} (${info.status})`);
+        log(` Using seat column ID: ${seatColumnId}`);
+        
+        // Build the clicked point data for ThoughtSpot
+        const clickedPoint = {
+          tuple: [
+            {
+              columnId: seatColumnId,
+              value: seatKey
+            }
+          ]
+        };
+        
+        // Tell ThoughtSpot to show its context menu
+        chartContext.emitEvent(ChartToTSEvent.OpenContextMenu, {
+          clickedPoint: clickedPoint,
+          event: ev
+        });
+        
+        log(` Context menu triggered for ${info.status} seat: ${seatKey}`);
+        
+      } catch (error) {
+        log(" Error showing context menu:", error);
+        console.error("Context menu error details:", error);
+      }
+    } else {
+      log(" Chart context not available - likely in edit mode, not liveboard view");
+    }
   });
 }
 
@@ -1001,6 +1105,9 @@ const getQueriesFromChartConfig = (
         }
       ]
     });
+
+    chartContext = ctx;
+    log(" Chart context saved globally");
     
     // Poll for data availability
     const checkAndRender = async () => {
