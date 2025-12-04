@@ -535,7 +535,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
 
     const pnrLine = info.travellerId ? `
       <div class="tooltip-row">
-        <span class="tooltip-label">PNR:</span>
+        <span class="tooltip-label">PNR/Stv ID:</span>
         <span class="tooltip-value">${info.travellerId}</span>
       </div>` : "";
 
@@ -551,9 +551,9 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
         <span class="tooltip-value">$${Number(info.spend).toFixed(2)}</span>
       </div>` : "";
 
-    const fareLine = info.item ? `
+    const PurchasedLine = info.item ? `
       <div class="tooltip-row">
-        <span class="tooltip-label">Fare type:</span>
+        <span class="tooltip-label">Frequently Purchased Item:</span>
         <span class="tooltip-value">${info.item}</span>
       </div>` : "";
 
@@ -572,7 +572,7 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
       ${pnrLine}
       ${tripsLine}
       ${spendLine}
-      ${fareLine}
+      ${PurchasedLine}
       ${statusLine}
       `,
       x,
@@ -782,7 +782,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
         const passengerName = getDataForColumn(row, "passenger_name")?.toString();
         const pnr = getDataForColumn(row, "pnr")?.toString();
         const statusStr = getDataForColumn(row, "status")?.toString();
-        const fareType = getDataForColumn(row, "fare_type")?.toString();
+        const frequentlyPurchasedItem = getDataForColumn(row, "frequently_purchased_item")?.toString();
         
         const tripsRaw = getDataForColumn(row, "trips");
         const trips = tripsRaw !== undefined ? parseInt(String(tripsRaw), 10) || 0 : undefined;
@@ -805,7 +805,7 @@ function buildSeatDataFromContext(ctx: CustomChartContext): Record<string, any> 
           travellerId: pnr,
           trips,
           spend,
-          item: fareType,
+          item: frequentlyPurchasedItem,
           status,
         };
 
@@ -851,7 +851,7 @@ async function renderChart(ctx: CustomChartContext) {
   if (Object.keys(dynamicSeatData).length === 0) {
     log("⚠️ No seat data to render - showing configuration message");
     const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;font-family:sans-serif;'><h3>⚙️ Configuration Required</h3><p>Please drag columns to the Configure panel slots:</p><ul style='text-align:left;display:inline-block;'><li><strong>Seat</strong> (required)</li><li>Passenger Name</li><li>PNR</li><li>Status</li><li>Fare Type</li><li>Trips</li><li>Spend</li></ul></div>";
+    root.innerHTML = "<div style='padding:20px;text-align:center;font-family:sans-serif;'><h3>⚙️ Configuration Required</h3><p>Please drag columns to the Configure panel slots:</p><ul style='text-align:left;display:inline-block;'><li><strong>Seat</strong> (required)</li><li>Passenger Name</li><li>PNR / Stv ID</li><li>Status</li><li>Frequently Purchased Item</li><li>Trips</li><li>Spend</li></ul></div>";
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
     log("✅ RenderComplete event emitted (no data)");
     return;
@@ -932,7 +932,7 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
           columns: []  // Empty - user configures
         },
         { 
-          key: "fare_type", 
+          key: "frequently_purchased_item", 
           columns: []  // Empty - user configures
         },
         { 
@@ -1006,7 +1006,7 @@ const getQueriesFromChartConfig = (
             },
             { 
               key: "pnr", 
-              label: "PNR / Booking Reference", 
+              label: "PNR / Stv ID", 
               allowAttributeColumns: true, 
               maxColumnCount: 1,
             },
@@ -1023,8 +1023,8 @@ const getQueriesFromChartConfig = (
               maxColumnCount: 1,
             },
             { 
-              key: "fare_type", 
-              label: "Fare Type", 
+              key: "frequently_purchased_item", 
+              label: "Frequently Purchased Item", 
               allowAttributeColumns: true, 
               maxColumnCount: 1,
             },
