@@ -713,6 +713,12 @@ function attachInteractivity(container: HTMLElement, seatData: any) {
     } else {
       log(" Chart context not available - likely in edit mode, not liveboard view");
     }
+  }); 
+
+  container.addEventListener("click", () => {
+    if (chartContext) {
+      chartContext.emitEvent(ChartToTSEvent.CloseContextMenu);
+    }
   });
 }
 
