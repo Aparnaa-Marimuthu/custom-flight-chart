@@ -951,7 +951,7 @@ async function renderChart(ctx: CustomChartContext) {
         justify-content: center;
         height: 100%;
         width: 100%;
-        background: #f7f9fa;
+        background: #ffffffff;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       '>
         <div style='
@@ -963,17 +963,17 @@ async function renderChart(ctx: CustomChartContext) {
             width: 80px;
             height: 80px;
             margin: 0 auto 24px;
-            background: #e8ecef;
+            background: #bbbbbb;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
           '>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="3" y="3" width="7" height="7" rx="1" fill="#9FA6AD"/>
-              <rect x="3" y="14" width="7" height="7" rx="1" fill="#9FA6AD"/>
-              <rect x="14" y="3" width="7" height="7" rx="1" fill="#9FA6AD"/>
-              <rect x="14" y="14" width="7" height="7" rx="1" fill="#9FA6AD"/>
+             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="10" width="3.5" height="10" rx="0.5" fill="#ffffff"/>
+                <rect x="8" y="4" width="3.5" height="16" rx="0.5" fill="#ffffff"/>
+                <rect x="13" y="7" width="3.5" height="13" rx="0.5" fill="#ffffff"/>
+                <rect x="18" y="12" width="3.5" height="8" rx="0.5" fill="#ffffff"/>
             </svg>
           </div>
           
@@ -990,19 +990,17 @@ async function renderChart(ctx: CustomChartContext) {
           
           <!-- Red warning box -->
           <div style='
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            border-left: 3px solid #ef4444;
-            border-radius: 4px;
-            padding: 12px 16px;
+            background: #fef3c7;
+            border: 1px solid #fde68a;
+            border-radius: 6px;
+            padding: 14px 18px;
             margin: 0 auto;
-            text-align: left;
+            text-align: center;
             font-size: 13px;
-            color: #991b1b;
-            line-height: 1.5;
+            color: #78716c;
+            line-height: 1.6;
           '>
-            <strong style="font-weight: 600;">⚠️ Seat Number required:</strong><br>
-            Please map the Seat Number column in the configuration panel to display your flight seat map.
+            ⚠️ Please map the <strong>Seat Number</strong> column to display the seat map
           </div>
         </div>
       </div>`;
