@@ -946,188 +946,33 @@ async function renderChart(ctx: CustomChartContext) {
     const root = document.getElementById("flight-chart") || document.body;
     root.innerHTML = `
       <div style='
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 400px;
-        padding: 40px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        padding: 60px 40px;
+        text-align: center;
+        font-family: sans-serif;
+        max-width: 500px;
+        margin: 0 auto;
       '>
+        <div style='font-size: 64px; margin-bottom: 20px;'>✈️</div>
+        
+        <h2 style='margin: 0 0 16px 0; color: #333;'>
+          Seat Number Required
+        </h2>
+        
+        <p style='font-size: 16px; color: #666; margin-bottom: 32px;'>
+          Please map the <strong>Seat Number</strong> column in the configuration panel to display your flight seat map.
+        </p>
+        
         <div style='
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 20px;
-          padding: 48px;
-          max-width: 600px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-          color: white;
-          text-align: center;
+          background: #f5f5f5;
+          padding: 20px;
+          border-radius: 8px;
+          text-align: left;
         '>
-          <div style='
-            background: rgba(255,255,255,0.2);
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 24px;
-            font-size: 40px;
-          '>
-            ✈️
+          <div style='color: #999; font-size: 14px; margin-bottom: 8px;'>
+            Optional fields:
           </div>
-          
-          <h2 style='
-            margin: 0 0 16px 0;
-            font-size: 32px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-          '>
-            Configuration Required
-          </h2>
-          
-          <p style='
-            margin: 0 0 32px 0;
-            font-size: 18px;
-            opacity: 0.95;
-            line-height: 1.6;
-          '>
-            To display your flight seat map, please configure the data fields in the panel on the right.
-          </p>
-          
-          <div style='
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 32px;
-            text-align: left;
-            border: 1px solid rgba(255,255,255,0.2);
-          '>
-            <div style='
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              margin-bottom: 20px;
-            '>
-              <div style='
-                background: #ff4757;
-                color: white;
-                width: 32px;
-                height: 32px;
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: bold;
-                font-size: 18px;
-              '>
-                !
-              </div>
-              <strong style='font-size: 18px;'>Required Field:</strong>
-            </div>
-            
-            <div style='
-              background: rgba(255,255,255,0.25);
-              padding: 16px 20px;
-              border-radius: 12px;
-              margin-bottom: 24px;
-              border-left: 4px solid #ff4757;
-            '>
-              <div style='font-size: 16px; font-weight: 600;'>🪑 Seat Number</div>
-              <div style='font-size: 14px; opacity: 0.9; margin-top: 4px;'>This field is mandatory to render the seat map</div>
-            </div>
-            
-            <div style='margin-bottom: 12px;'>
-              <strong style='font-size: 16px;'>📋 Optional Fields:</strong>
-            </div>
-            
-            <div style='
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 12px;
-              font-size: 15px;
-            '>
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>👤</span>
-                <span>Passenger Name</span>
-              </div>
-              
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>🎫</span>
-                <span>PNR / Stv ID</span>
-              </div>
-              
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>📊</span>
-                <span>Status</span>
-              </div>
-              
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>🛍️</span>
-                <span>Purchased Item</span>
-              </div>
-              
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>✈️</span>
-                <span>Number of Trips</span>
-              </div>
-              
-              <div style='
-                background: rgba(255,255,255,0.1);
-                padding: 12px 16px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              '>
-                <span style='font-size: 18px;'>💰</span>
-                <span>Total Spend</span>
-              </div>
-            </div>
-          </div>
-          
-          <div style='
-            margin-top: 32px;
-            padding-top: 24px;
-            border-top: 1px solid rgba(255,255,255,0.2);
-            font-size: 14px;
-            opacity: 0.9;
-          '>
-            💡 <strong>Tip:</strong> Drag and drop columns from your worksheet to the configuration panel
+          <div style='color: #666; font-size: 14px; line-height: 1.8;'>
+            Passenger Name • PNR • Status • Trips • Spend • Item
           </div>
         </div>
       </div>`;
