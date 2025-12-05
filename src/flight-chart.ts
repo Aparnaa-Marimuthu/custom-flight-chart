@@ -944,7 +944,68 @@ async function renderChart(ctx: CustomChartContext) {
 
   if (Object.keys(dynamicSeatData).length === 0) {
     const root = document.getElementById("flight-chart") || document.body;
-    root.innerHTML = "<div style='padding:20px;text-align:center;font-family:sans-serif;'><h3>⚙️ Configuration Required</h3><p>Please drag columns to the Configure panel slots:</p><ul style='text-align:left;display:inline-block;'><li><strong>Seat</strong> (required)</li><li>Passenger Name</li><li>PNR / Stv ID</li><li>Status</li><li>Frequently Purchased Item</li><li>Trips</li><li>Spend</li></ul></div>";
+    root.innerHTML = `
+      <div style='
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 400px;
+        padding: 40px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      '>
+        <div style='
+          background: white;
+          border-radius: 12px;
+          padding: 40px;
+          max-width: 500px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          text-align: center;
+        '>
+          <div style='font-size: 48px; margin-bottom: 20px;'>✈️</div>
+          
+          <h2 style='
+            margin: 0 0 12px 0;
+            font-size: 24px;
+            color: #333;
+          '>
+            Configuration Required
+          </h2>
+          
+          <p style='
+            margin: 0 0 32px 0;
+            font-size: 15px;
+            color: #666;
+          '>
+            Please map the Seat Number column to display the chart
+          </p>
+          
+          <div style='
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 16px;
+            border-radius: 6px;
+            text-align: left;
+            margin-bottom: 24px;
+          '>
+            <strong style='color: #856404;'>🪑 Seat Number</strong>
+            <div style='color: #856404; font-size: 14px; margin-top: 4px;'>Required</div>
+          </div>
+          
+          <div style='text-align: left;'>
+            <div style='color: #666; font-size: 14px; margin-bottom: 12px;'>
+              <strong>Optional fields:</strong>
+            </div>
+            <div style='color: #999; font-size: 14px; line-height: 1.8;'>
+              • Passenger Name<br>
+              • PNR / Stv ID<br>
+              • Status<br>
+              • Trips<br>
+              • Spend<br>
+              • Frequently Purchased Item
+            </div>
+          </div>
+        </div>
+      </div>`;
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
     return;
   }
@@ -982,12 +1043,12 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
     );
   };
 
-  const seatCol = findColumn(["seat", "seatnumber", "seat_number"], attributes);
+  const passengerCol = findColumn(["passenger", "name", "passenger_name"], attributes);
   
-  if (seatCol) {
-    log(` Auto-detected Seat column: "${seatCol.name}"`);
+  if (passengerCol) {
+    log(` Auto-detected passenger-name column: "${passengerCol.name}"`);
   } else {
-    log(` No Seat column auto-detected - user must configure manually`);
+    log(` No passenger-name column auto-detected - user must configure manually`);
   }
 
   return [
@@ -996,11 +1057,11 @@ const getDefaultChartConfig = (chartModel: ChartModel): ChartConfig[] => {
       dimensions: [
         { 
           key: "seat", 
-          columns: seatCol ? [seatCol] : []  
+          columns: []             
         },
         { 
-          key: "passenger_name", 
-          columns: []  
+          key: "passenger_name",  
+          columns: passengerCol ? [passengerCol] : []
         },
         { 
           key: "pnr", 
