@@ -946,33 +946,63 @@ async function renderChart(ctx: CustomChartContext) {
     const root = document.getElementById("flight-chart") || document.body;
     root.innerHTML = `
       <div style='
-        padding: 60px 40px;
-        text-align: center;
-        font-family: sans-serif;
-        max-width: 500px;
-        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        width: 100%;
+        background: #f7f9fa;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       '>
-        <div style='font-size: 64px; margin-bottom: 20px;'>✈️</div>
-        
-        <h2 style='margin: 0 0 16px 0; color: #333;'>
-          Seat Number Required
-        </h2>
-        
-        <p style='font-size: 16px; color: #666; margin-bottom: 32px;'>
-          Please map the <strong>Seat Number</strong> column in the configuration panel to display your flight seat map.
-        </p>
-        
         <div style='
-          background: #f5f5f5;
-          padding: 20px;
-          border-radius: 8px;
-          text-align: left;
+          text-align: center;
+          max-width: 400px;
         '>
-          <div style='color: #999; font-size: 14px; margin-bottom: 8px;'>
-            Optional fields:
+          <!-- Chart icon -->
+          <div style='
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            background: #e8ecef;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          '>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill="#9FA6AD"/>
+              <rect x="3" y="14" width="7" height="7" rx="1" fill="#9FA6AD"/>
+              <rect x="14" y="3" width="7" height="7" rx="1" fill="#9FA6AD"/>
+              <rect x="14" y="14" width="7" height="7" rx="1" fill="#9FA6AD"/>
+            </svg>
           </div>
-          <div style='color: #666; font-size: 14px; line-height: 1.8;'>
-            Passenger Name • PNR • Status • Trips • Spend • Item
+          
+          <!-- Error message -->
+          <div style='
+            font-size: 15px;
+            color: #4a5568;
+            font-weight: 500;
+            margin-bottom: 16px;
+            letter-spacing: -0.1px;
+          '>
+            Cannot display the custom chart
+          </div>
+          
+          <!-- Red warning box -->
+          <div style='
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 3px solid #ef4444;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin: 0 auto;
+            text-align: left;
+            font-size: 13px;
+            color: #991b1b;
+            line-height: 1.5;
+          '>
+            <strong style="font-weight: 600;">⚠️ Seat Number required:</strong><br>
+            Please map the Seat Number column in the configuration panel to display your flight seat map.
           </div>
         </div>
       </div>`;
