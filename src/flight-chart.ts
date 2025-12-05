@@ -1051,6 +1051,35 @@ const getQueriesFromChartConfig = (
 };
 
 // -------------------------------------------------------
+// VALIDATION - WARN IF SEAT IS NOT MAPPED
+// -------------------------------------------------------
+const validateConfig = (
+  updatedConfig: ChartConfig[],
+  _chartModel: ChartModel
+): { isValid: boolean; validationErrorMessage?: string[] } => {
+  
+  // Check if any config has the seat dimension mapped
+  const hasSeatColumn = updatedConfig.some(config => 
+    config.dimensions?.some(dim => 
+      dim.key === "seat" && dim.columns && dim.columns.length > 0
+    )
+  );
+  
+  if (!hasSeatColumn) {
+    log(" Validation failed - Seat column not mapped");
+    return {
+      isValid: false,
+      validationErrorMessage: [
+        "Seat Number is required. Please map a column to the 'Seat Number' slot."
+      ]
+    };
+  }
+  
+  log(" Validation passed - Seat column is mapped");
+  return { isValid: true };
+};
+
+// -------------------------------------------------------
 // INIT
 // -------------------------------------------------------
 (async () => {
@@ -1061,6 +1090,7 @@ const getQueriesFromChartConfig = (
       getDefaultChartConfig,
       getQueriesFromChartConfig,
       renderChart,
+      validateConfig,  
       visualPropEditorDefinition: {
         elements: [],
       },
@@ -1072,7 +1102,7 @@ const getQueriesFromChartConfig = (
           columnSections: [
             { 
               key: "seat", 
-              label: "Seat Number", 
+              label: "Seat Number (Required)", 
               allowAttributeColumns: true, 
               maxColumnCount: 1,
             },
